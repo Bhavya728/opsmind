@@ -1,0 +1,1740 @@
+[
+  {
+    "id": "INC-101",
+    "title": "API latency spike after v2.4.1 deployment",
+    "service": "order-service",
+    "symptom": "p99 latency spiked from 120ms to 4800ms following deployment of v2.4.1",
+    "root_cause": "Misconfigured database connection pool size reduced from 50 to 5 in v2.4.1 deployment config, causing severe connection queuing.",
+    "confidence": 0.96,
+    "recommended_actions": [
+      "Roll back order-service to deployment v2.4.0 immediately",
+      "Update max_connections in configmap to 50",
+      "Add lint check in CI/CD pipeline to validate database pool sizing against baseline"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-01T14:15:02Z",
+        "level": "INFO",
+        "service": "order-service",
+        "trace_id": "tr-101a",
+        "message": "Deploying release v2.4.1 - image hash: sha256:7f3b89"
+      },
+      {
+        "timestamp": "2026-03-01T14:16:10Z",
+        "level": "WARN",
+        "service": "order-service",
+        "trace_id": "tr-101b",
+        "message": "DB connection pool utilization at 100% (5/5 connections active). Connection wait queue: 84 requests."
+      },
+      {
+        "timestamp": "2026-03-01T14:16:45Z",
+        "level": "ERROR",
+        "service": "order-service",
+        "trace_id": "tr-101c",
+        "message": "HikariPool-1 - Connection is not available, request timed out after 30000ms. Active: 5, Idle: 0, Waiting: 142",
+        "stack_trace": "com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:182)\n\tat com.enterprise.orders.repository.OrderRepository.save(OrderRepository.java:45)"
+      },
+      {
+        "timestamp": "2026-03-01T14:17:30Z",
+        "level": "ERROR",
+        "service": "order-service",
+        "trace_id": "tr-101d",
+        "message": "HTTP POST /api/v1/orders failed with status 504 Gateway Timeout - downstream DB query blocked"
+      }
+    ],
+    "metrics": {
+      "p95_latency_ms": [
+        110,
+        115,
+        120,
+        2400,
+        4200,
+        4800
+      ],
+      "p99_latency_ms": [
+        140,
+        150,
+        160,
+        3800,
+        5200,
+        6100
+      ],
+      "error_rate_pct": [
+        0.01,
+        0.02,
+        0.01,
+        8.4,
+        22.1,
+        35.0
+      ],
+      "active_db_connections": [
+        18,
+        20,
+        22,
+        5,
+        5,
+        5
+      ],
+      "max_db_connections": [
+        50,
+        50,
+        50,
+        5,
+        5,
+        5
+      ],
+      "cpu_utilization_pct": [
+        35,
+        38,
+        40,
+        42,
+        45,
+        41
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-881",
+        "service": "order-service",
+        "version": "v2.4.1",
+        "timestamp": "2026-03-01T14:15:00Z",
+        "status": "SUCCESS",
+        "author": "dev-alex",
+        "changelog": "Optimize connection pool memory footprint; refactor checkout route"
+      },
+      {
+        "deployment_id": "dep-850",
+        "service": "order-service",
+        "version": "v2.4.0",
+        "timestamp": "2026-02-24T10:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-sarah",
+        "changelog": "Add bulk order discount calculations"
+      }
+    ],
+    "matched_runbook": "RB-ORD-01: Order Service Latency & Database Pool Exhaustion"
+  },
+  {
+    "id": "INC-102",
+    "title": "Database connection exhaustion due to unindexed transaction leak",
+    "service": "payment-service",
+    "symptom": "PostgreSQL max_connections limit (500) reached; payment transactions failing with 'FATAL: remaining connection slots are reserved for non-replication superuser connections'",
+    "root_cause": "Long-running unindexed query on payment_audit_logs with missing table index holding open uncommitted transactions.",
+    "confidence": 0.95,
+    "recommended_actions": [
+      "Terminate idle-in-transaction connections using pg_terminate_backend",
+      "Apply hotfix migration to add index on payment_audit_logs(created_at, merchant_id)",
+      "Set idle_in_transaction_session_timeout to 15s in postgresql.conf"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-02T09:10:15Z",
+        "level": "WARN",
+        "service": "payment-service",
+        "trace_id": "tr-102a",
+        "message": "Database client pool: 490/500 connections active"
+      },
+      {
+        "timestamp": "2026-03-02T09:11:00Z",
+        "level": "FATAL",
+        "service": "payment-service",
+        "trace_id": "tr-102b",
+        "message": "org.postgresql.util.PSQLException: FATAL: remaining connection slots are reserved for non-replication superuser connections",
+        "stack_trace": "org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:319)"
+      },
+      {
+        "timestamp": "2026-03-02T09:11:22Z",
+        "level": "ERROR",
+        "service": "payment-service",
+        "trace_id": "tr-102c",
+        "message": "Query 'SELECT * FROM payment_audit_logs WHERE merchant_id = ? AND status = ?' duration 84200ms in state idle in transaction (pid 18291)"
+      }
+    ],
+    "metrics": {
+      "active_db_connections": [
+        210,
+        290,
+        420,
+        495,
+        500,
+        500
+      ],
+      "max_db_connections": [
+        500,
+        500,
+        500,
+        500,
+        500,
+        500
+      ],
+      "p99_latency_ms": [
+        85,
+        92,
+        450,
+        2100,
+        8900,
+        12000
+      ],
+      "error_rate_pct": [
+        0.0,
+        0.05,
+        3.2,
+        28.5,
+        67.0,
+        89.4
+      ],
+      "cpu_utilization_pct": [
+        40,
+        45,
+        55,
+        78,
+        92,
+        98
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-720",
+        "service": "payment-service",
+        "version": "v1.9.4",
+        "timestamp": "2026-02-28T16:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-raj",
+        "changelog": "Add compliance audit logging step before settlement"
+      }
+    ],
+    "matched_runbook": "RB-DB-02: PostgreSQL Connection Exhaustion & Transaction Leaks"
+  },
+  {
+    "id": "INC-103",
+    "title": "Memory leak causing OOMKilled pod crash loops in auth-service",
+    "service": "auth-service",
+    "symptom": "auth-service pods terminating with ExitCode 137 (OOMKilled) every 45 minutes under standard load",
+    "root_cause": "Unbounded in-memory session token revocation cache growing continuously without TTL expiry eviction.",
+    "confidence": 0.98,
+    "recommended_actions": [
+      "Increase pod memory limit from 512Mi to 1Gi as temporary buffer",
+      "Deploy patch v3.1.2 replacing unbounded ConcurrentHashMap with Guava Cache with max size 100,000 and 1-hour TTL",
+      "Enable Prometheus alert for Go/JVM Heap usage > 85%"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-02T11:00:00Z",
+        "level": "INFO",
+        "service": "auth-service",
+        "trace_id": "tr-103a",
+        "message": "Pod auth-service-78bfd86-kx2l9 started"
+      },
+      {
+        "timestamp": "2026-03-02T11:35:10Z",
+        "level": "WARN",
+        "service": "auth-service",
+        "trace_id": "tr-103b",
+        "message": "JVM Heap memory reached 92% (471MB / 512MB). SessionRevocationStore contains 1,842,000 entries."
+      },
+      {
+        "timestamp": "2026-03-02T11:42:01Z",
+        "level": "FATAL",
+        "service": "auth-service",
+        "trace_id": "tr-103c",
+        "message": "Kubelet cgroup event: Pod auth-service-78bfd86-kx2l9 exceeded memory limit (512Mi). Terminated with exit code 137 (OOMKilled)",
+        "stack_trace": "java.lang.OutOfMemoryError: Java heap space\n\tat java.base/java.util.concurrent.ConcurrentHashMap.putVal(ConcurrentHashMap.java:1011)"
+      }
+    ],
+    "metrics": {
+      "memory_usage_mb": [
+        120,
+        210,
+        340,
+        460,
+        510,
+        110
+      ],
+      "pod_restarts": [
+        0,
+        0,
+        0,
+        1,
+        2,
+        3
+      ],
+      "p99_latency_ms": [
+        45,
+        50,
+        120,
+        950,
+        4200,
+        60
+      ],
+      "error_rate_pct": [
+        0.0,
+        0.0,
+        1.1,
+        14.5,
+        45.0,
+        0.2
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-610",
+        "service": "auth-service",
+        "version": "v3.1.1",
+        "timestamp": "2026-03-01T08:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-chen",
+        "changelog": "Store revoked JWTs locally in fast lookup map"
+      }
+    ],
+    "matched_runbook": "RB-AUTH-03: Memory Leaks and OOMKilled Pod Crash Recovery"
+  },
+  {
+    "id": "INC-104",
+    "title": "High HTTP 500 error rate from corrupted JWT key rotation",
+    "service": "auth-service",
+    "symptom": "All authenticated endpoints returning HTTP 500 Internal Server Error (invalid key spec format error)",
+    "root_cause": "Automated key rotation job pushed malformed PEM header (missing newline) to Secret Manager, causing auth-service signature validation parser to fail.",
+    "confidence": 0.97,
+    "recommended_actions": [
+      "Re-issue previous valid public key JWKS payload to Secret Manager",
+      "Restart auth-service deployment to invalidate cached key bytes",
+      "Add pre-commit format validation regex in key-rotation cronjob"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-03T02:00:05Z",
+        "level": "INFO",
+        "service": "auth-service",
+        "trace_id": "tr-104a",
+        "message": "Triggering periodic JWKS public key rotation"
+      },
+      {
+        "timestamp": "2026-03-03T02:00:15Z",
+        "level": "ERROR",
+        "service": "auth-service",
+        "trace_id": "tr-104b",
+        "message": "Failed to parse RSA public key from secret manager payload: java.security.spec.InvalidKeySpecException: encoded key spec not recognized",
+        "stack_trace": "java.security.KeyFactory.generatePublic(KeyFactory.java:352)\n\tat com.enterprise.auth.jwt.KeyProvider.loadPublicKey(KeyProvider.java:62)"
+      },
+      {
+        "timestamp": "2026-03-03T02:00:30Z",
+        "level": "ERROR",
+        "service": "auth-service",
+        "trace_id": "tr-104c",
+        "message": "HTTP POST /api/v1/auth/verify failed with 500: KeyProviderException"
+      }
+    ],
+    "metrics": {
+      "error_rate_pct": [
+        0.0,
+        0.0,
+        98.5,
+        99.1,
+        99.4,
+        98.9
+      ],
+      "http_5xx_count": [
+        0,
+        2,
+        4510,
+        8920,
+        11200,
+        12400
+      ],
+      "p95_latency_ms": [
+        25,
+        26,
+        32,
+        35,
+        30,
+        28
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-550",
+        "service": "auth-service",
+        "version": "v3.1.0",
+        "timestamp": "2026-02-15T12:00:00Z",
+        "status": "SUCCESS",
+        "author": "sec-team",
+        "changelog": "Initial JWKS rotation handler"
+      }
+    ],
+    "matched_runbook": "RB-AUTH-01: JWT Verification and Key Rotation Failures"
+  },
+  {
+    "id": "INC-105",
+    "title": "Redis cache eviction storm and memory saturation",
+    "service": "inventory-service",
+    "symptom": "Redis cluster returning 'OOM command not allowed when used memory > maxmemory'; cache hit ratio dropped from 94% to 8%",
+    "root_cause": "Redis maxmemory-policy misconfigured to 'noeviction' instead of 'volatile-lru', preventing expired key purging under high inventory sync load.",
+    "confidence": 0.94,
+    "recommended_actions": [
+      "Execute CONFIG SET maxmemory-policy allkeys-lru on Redis cluster nodes",
+      "Trigger manual FLUSHDB on non-persistent inventory temporary keys",
+      "Update Redis Helm values with maxmemory-policy: allkeys-lru and persist in git"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-03T08:14:00Z",
+        "level": "WARN",
+        "service": "inventory-service",
+        "trace_id": "tr-105a",
+        "message": "Redis memory usage: 15.9GB / 16.0GB (99.3%)"
+      },
+      {
+        "timestamp": "2026-03-03T08:15:20Z",
+        "level": "ERROR",
+        "service": "inventory-service",
+        "trace_id": "tr-105b",
+        "message": "redis.exceptions.ResponseError: OOM command not allowed when used memory > 'maxmemory' policy 'noeviction'",
+        "stack_trace": "redis.client.execute_command(client.py:902)\n\tat app.cache.set_inventory(cache.py:78)"
+      },
+      {
+        "timestamp": "2026-03-03T08:16:00Z",
+        "level": "WARN",
+        "service": "inventory-service",
+        "trace_id": "tr-105c",
+        "message": "Bypassing cache due to Redis write errors; degrading to direct PostgreSQL reads"
+      }
+    ],
+    "metrics": {
+      "cache_hit_ratio_pct": [
+        94.0,
+        93.5,
+        42.0,
+        12.0,
+        8.0,
+        8.1
+      ],
+      "redis_memory_used_gb": [
+        12.1,
+        14.2,
+        15.8,
+        16.0,
+        16.0,
+        16.0
+      ],
+      "db_query_load_qps": [
+        400,
+        420,
+        2400,
+        5800,
+        7100,
+        7200
+      ],
+      "p99_latency_ms": [
+        18,
+        22,
+        180,
+        890,
+        2400,
+        2600
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-411",
+        "service": "inventory-service",
+        "version": "v1.4.2",
+        "timestamp": "2026-03-02T22:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-leo",
+        "changelog": "Batch inventory sync pipeline"
+      }
+    ],
+    "matched_runbook": "RB-CACHE-01: Redis Memory Saturation & Eviction Policy Triage"
+  },
+  {
+    "id": "INC-106",
+    "title": "Third-party payment gateway 504 timeouts causing thread starvation",
+    "service": "payment-service",
+    "symptom": "Payment service request thread pool saturated (200/200 threads blocked); inbound requests queueing indefinitely",
+    "root_cause": "Upstream payment provider 'Stripe-Mock-Gateway' experiencing outage; payment-service missing socket read timeout (defaulting to 300s).",
+    "confidence": 0.95,
+    "recommended_actions": [
+      "Enable circuit breaker for payment provider endpoint (fail-fast within 3s)",
+      "Configure socket read timeout to 5000ms in payment gateway HTTP client",
+      "Route non-critical transactions to secondary payment processor"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-03T16:20:00Z",
+        "level": "WARN",
+        "service": "payment-service",
+        "trace_id": "tr-106a",
+        "message": "External payment API response time exceeding 20000ms for gateway https://api.mockstripe.internal"
+      },
+      {
+        "timestamp": "2026-03-03T16:21:30Z",
+        "level": "ERROR",
+        "service": "payment-service",
+        "trace_id": "tr-106b",
+        "message": "ThreadPoolExecutor saturated: 200 active threads, queue length 1024 (capacity reached)",
+        "stack_trace": "java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1367)"
+      },
+      {
+        "timestamp": "2026-03-03T16:22:15Z",
+        "level": "ERROR",
+        "service": "payment-service",
+        "trace_id": "tr-106c",
+        "message": "RejectedExecutionException on POST /api/v1/payments/charge"
+      }
+    ],
+    "metrics": {
+      "active_worker_threads": [
+        40,
+        52,
+        180,
+        200,
+        200,
+        200
+      ],
+      "p99_latency_ms": [
+        210,
+        230,
+        8500,
+        29000,
+        30000,
+        30000
+      ],
+      "error_rate_pct": [
+        0.0,
+        0.1,
+        14.0,
+        48.0,
+        82.0,
+        94.0
+      ],
+      "upstream_5xx_rate": [
+        0.0,
+        0.0,
+        64.0,
+        88.0,
+        95.0,
+        95.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-302",
+        "service": "payment-service",
+        "version": "v1.9.0",
+        "timestamp": "2026-02-10T09:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-raj",
+        "changelog": "Initial integration of new gateway"
+      }
+    ],
+    "matched_runbook": "RB-PAY-02: Third-Party Gateway Timeouts & Thread Pool Starvation"
+  },
+  {
+    "id": "INC-107",
+    "title": "Database CPU saturation from unindexed timestamp filter query",
+    "service": "analytics-service",
+    "symptom": "PostgreSQL Primary Node CPU at 100%; all read queries stalling across analytics dashboards",
+    "root_cause": "Analytics aggregation query executing sequential scan over 45M rows in `event_stream` table due to missing index on `(created_at, event_type)`.",
+    "confidence": 0.98,
+    "recommended_actions": [
+      "Cancel active runaway sequential scan query via pg_cancel_backend(pid)",
+      "Create index concurrently: `CREATE INDEX CONCURRENTLY idx_event_stream_created_event ON event_stream(created_at, event_type);`",
+      "Set statement_timeout = '10s' for analytics read-replica user"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-04T04:00:10Z",
+        "level": "INFO",
+        "service": "analytics-service",
+        "trace_id": "tr-107a",
+        "message": "Starting hourly rollup cronjob"
+      },
+      {
+        "timestamp": "2026-03-04T04:01:20Z",
+        "level": "WARN",
+        "service": "analytics-service",
+        "trace_id": "tr-107b",
+        "message": "Slow query alert: Seq Scan on event_stream (cost=0.00..892401.50 rows=45120890) duration: 184s"
+      },
+      {
+        "timestamp": "2026-03-04T04:03:00Z",
+        "level": "ERROR",
+        "service": "analytics-service",
+        "trace_id": "tr-107c",
+        "message": "Database query timed out after 300000ms on table event_stream"
+      }
+    ],
+    "metrics": {
+      "db_cpu_utilization_pct": [
+        22,
+        25,
+        88,
+        99,
+        100,
+        100
+      ],
+      "sequential_scan_count": [
+        5,
+        6,
+        420,
+        890,
+        1200,
+        1350
+      ],
+      "p95_latency_ms": [
+        80,
+        85,
+        3400,
+        18000,
+        45000,
+        52000
+      ],
+      "active_queries": [
+        8,
+        10,
+        45,
+        68,
+        70,
+        70
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-201",
+        "service": "analytics-service",
+        "version": "v1.2.0",
+        "timestamp": "2026-03-03T18:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-mona",
+        "changelog": "Add 30-day customer retention metric dashboard query"
+      }
+    ],
+    "matched_runbook": "RB-DB-01: Relational Database CPU Saturation & Query Optimization"
+  },
+  {
+    "id": "INC-108",
+    "title": "Failed deployment pushing invalid Kafka broker DNS endpoint",
+    "service": "notification-service",
+    "symptom": "notification-service CrashLoopBackOff with UnknownHostException: 'kafka-cluster-prod.internal.corp'",
+    "root_cause": "Typo in Helm values.yaml configmap for notification-service: 'kafka-clstr-prod.internal.corp' instead of 'kafka-cluster-prod.internal.corp'.",
+    "confidence": 0.99,
+    "recommended_actions": [
+      "Fix Kafka broker hostname in Helm values to 'kafka-cluster-prod.internal.corp'",
+      "Perform helm rollback notification-service 1",
+      "Verify pods transition from CrashLoopBackOff to 1/1 Running"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-04T10:15:00Z",
+        "level": "INFO",
+        "service": "notification-service",
+        "trace_id": "tr-108a",
+        "message": "Starting notification-service v2.1.0"
+      },
+      {
+        "timestamp": "2026-03-04T10:15:05Z",
+        "level": "FATAL",
+        "service": "notification-service",
+        "trace_id": "tr-108b",
+        "message": "org.apache.kafka.common.config.ConfigException: No resolvable bootstrap urls given in bootstrap.servers: [kafka-clstr-prod.internal.corp:9092]",
+        "stack_trace": "org.apache.kafka.clients.ClientUtils.parseAndValidateAddresses(ClientUtils.java:93)"
+      },
+      {
+        "timestamp": "2026-03-04T10:15:10Z",
+        "level": "FATAL",
+        "service": "notification-service",
+        "trace_id": "tr-108c",
+        "message": "Application context initialization failed; exiting with code 1"
+      }
+    ],
+    "metrics": {
+      "ready_pod_count": [
+        5,
+        5,
+        0,
+        0,
+        0,
+        0
+      ],
+      "crash_loop_backoff_events": [
+        0,
+        0,
+        5,
+        12,
+        24,
+        38
+      ],
+      "pending_notifications_queue": [
+        120,
+        150,
+        2400,
+        8900,
+        15000,
+        22000
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-108",
+        "service": "notification-service",
+        "version": "v2.1.0",
+        "timestamp": "2026-03-04T10:14:00Z",
+        "status": "FAILED",
+        "author": "dev-sam",
+        "changelog": "Migrate Kafka cluster endpoint to dedicated VPC"
+      }
+    ],
+    "matched_runbook": "RB-KAFKA-01: Kafka Producer Connection & Configuration Troubleshooting"
+  },
+  {
+    "id": "INC-109",
+    "title": "API gateway circuit breaker stuck open blocking healthy routes",
+    "service": "api-gateway",
+    "symptom": "api-gateway returning HTTP 503 'Service Unavailable - Circuit Breaker OPEN' for user-service even though user-service is 100% healthy",
+    "root_cause": "Circuit breaker threshold tripped during momentary 5-second network blip; recovery probe interval set to 0 (never re-tested half-open state).",
+    "confidence": 0.96,
+    "recommended_actions": [
+      "Send POST /admin/circuit-breaker/user-service/reset to api-gateway admin port",
+      "Update circuit breaker config: set waitDurationInOpenState: 15s and ringBufferSizeInHalfOpenState: 10",
+      "Deploy api-gateway patch config v4.0.2"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-04T14:30:00Z",
+        "level": "WARN",
+        "service": "api-gateway",
+        "trace_id": "tr-109a",
+        "message": "CircuitBreaker 'user-service-cb' state transition from CLOSED to OPEN (failure rate: 60% > threshold: 50%)"
+      },
+      {
+        "timestamp": "2026-03-04T14:35:00Z",
+        "level": "ERROR",
+        "service": "api-gateway",
+        "trace_id": "tr-109b",
+        "message": "CircuitBreaker 'user-service-cb' is OPEN and does not permit further calls",
+        "stack_trace": "io.github.resilience4j.circuitbreaker.CallNotPermittedException: CircuitBreaker 'user-service-cb' is OPEN"
+      },
+      {
+        "timestamp": "2026-03-04T14:36:00Z",
+        "level": "INFO",
+        "service": "user-service",
+        "trace_id": "tr-109c",
+        "message": "Healthcheck endpoint /health returning 200 OK (CPU: 12%, Memory: 21%)"
+      }
+    ],
+    "metrics": {
+      "gateway_503_count": [
+        0,
+        10,
+        2400,
+        4800,
+        5200,
+        5200
+      ],
+      "user_service_actual_health": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "circuit_breaker_state": [
+        "CLOSED",
+        "OPEN",
+        "OPEN",
+        "OPEN",
+        "OPEN",
+        "OPEN"
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-099",
+        "service": "api-gateway",
+        "version": "v4.0.1",
+        "timestamp": "2026-03-03T11:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-jordan",
+        "changelog": "Enable Resilience4j circuit breakers on upstream routes"
+      }
+    ],
+    "matched_runbook": "RB-GW-01: API Gateway Circuit Breakers & Ingress Routing"
+  },
+  {
+    "id": "INC-110",
+    "title": "SSL/TLS certificate expiration on internal service mesh ingress",
+    "service": "api-gateway",
+    "symptom": "All inter-service mTLS calls failing with 'SSLHandshakeException: PKIX path validation failed: certificate expired'",
+    "root_cause": "Cert-manager automated Let's Encrypt / Vault renewal webhook failed due to expired webhook token; internal CA expired at 00:00:00 UTC.",
+    "confidence": 0.99,
+    "recommended_actions": [
+      "Manually renew cluster issuer certificate using cert-manager CLI",
+      "Force rollout restart on ingress-nginx and istio-proxy sidecars",
+      "Implement cert-expiry Prometheus alerting rule with 30-day warning threshold"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-05T00:00:02Z",
+        "level": "ERROR",
+        "service": "api-gateway",
+        "trace_id": "tr-110a",
+        "message": "javax.net.ssl.SSLHandshakeException: PKIX path validation failed: java.security.cert.CertificateExpiredException: NotAfter: Wed Mar 04 23:59:59 UTC 2026",
+        "stack_trace": "sun.security.ssl.Alert.createSSLException(Alert.java:131)\n\tat sun.security.ssl.TransportContext.fatal(TransportContext.java:371)"
+      },
+      {
+        "timestamp": "2026-03-05T00:00:10Z",
+        "level": "ERROR",
+        "service": "order-service",
+        "trace_id": "tr-110b",
+        "message": "mTLS handshake failed with upstream api-gateway"
+      }
+    ],
+    "metrics": {
+      "tls_handshake_errors": [
+        0,
+        480,
+        8900,
+        15400,
+        18200,
+        19000
+      ],
+      "successful_handshakes": [
+        5000,
+        4500,
+        100,
+        0,
+        0,
+        0
+      ],
+      "days_until_cert_expiry": [
+        0,
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-088",
+        "service": "cert-manager",
+        "version": "v1.13.0",
+        "timestamp": "2025-12-01T00:00:00Z",
+        "status": "SUCCESS",
+        "author": "infra-team",
+        "changelog": "Initial cluster cert-manager deployment"
+      }
+    ],
+    "matched_runbook": "RB-SEC-01: SSL/TLS Certificate Expiration & Renewal Troubleshooting"
+  },
+  {
+    "id": "INC-111",
+    "title": "Deadlock in order processing under high checkout concurrency",
+    "service": "order-service",
+    "symptom": "PostgreSQL transaction rollback rate spiked to 45%; logs showing 'ERROR: deadlock detected'",
+    "root_cause": "Inconsistent locking order between order_items and inventory_reserves tables across parallel checkout workers.",
+    "confidence": 0.95,
+    "recommended_actions": [
+      "Enforce strict canonical sorting (by item_id ascending) prior to acquiring SELECT ... FOR UPDATE row locks",
+      "Deploy patch v2.4.2 to order-service",
+      "Set deadlock_timeout to 200ms for fast detection and retry in application client"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-05T12:00:15Z",
+        "level": "ERROR",
+        "service": "order-service",
+        "trace_id": "tr-111a",
+        "message": "org.postgresql.util.PSQLException: ERROR: deadlock detected\nDetail: Process 4129 waits for ShareLock on transaction 8812; blocked by process 4130.\nProcess 4130 waits for ExclusiveLock on tuple (42, 18) of relation inventory; blocked by process 4129.",
+        "stack_trace": "org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2553)"
+      },
+      {
+        "timestamp": "2026-03-05T12:00:20Z",
+        "level": "WARN",
+        "service": "order-service",
+        "trace_id": "tr-111b",
+        "message": "Transaction rolled back for checkout session cs_99218 due to database deadlock"
+      }
+    ],
+    "metrics": {
+      "deadlock_events_count": [
+        0,
+        2,
+        48,
+        180,
+        420,
+        610
+      ],
+      "transaction_rollback_rate_pct": [
+        0.1,
+        0.5,
+        12.0,
+        35.0,
+        44.0,
+        45.0
+      ],
+      "p95_latency_ms": [
+        120,
+        150,
+        1200,
+        3800,
+        5100,
+        5400
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-890",
+        "service": "order-service",
+        "version": "v2.4.0",
+        "timestamp": "2026-03-05T08:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-alex",
+        "changelog": "Add parallel item reservation"
+      }
+    ],
+    "matched_runbook": "RB-ORD-02: Database Concurrency Deadlocks and Locking Order"
+  },
+  {
+    "id": "INC-112",
+    "title": "Rate limiter misconfiguration dropping valid mobile API traffic",
+    "service": "api-gateway",
+    "symptom": "HTTP 429 Too Many Requests returned for 65% of mobile client requests",
+    "root_cause": "Token bucket rate limit rule applied per-IP behind Cloudflare proxy instead of using `X-Forwarded-For` or `CF-Connecting-IP`, throttling all traffic to 10 req/s shared.",
+    "confidence": 0.98,
+    "recommended_actions": [
+      "Update rate limiter key extractor to use `X-Forwarded-For` client IP",
+      "Increase default client rate limit threshold to 100 req/s",
+      "Hot-reload Envoy / Kong configuration in api-gateway"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-05T15:00:10Z",
+        "level": "WARN",
+        "service": "api-gateway",
+        "trace_id": "tr-112a",
+        "message": "Rate limit exceeded for client key 172.68.22.1: current count 145 > limit 10/sec"
+      },
+      {
+        "timestamp": "2026-03-05T15:00:15Z",
+        "level": "WARN",
+        "service": "api-gateway",
+        "trace_id": "tr-112b",
+        "message": "Notice: 172.68.22.1 matches Cloudflare edge ingress subnet. Rate limiting proxy IP globally!"
+      }
+    ],
+    "metrics": {
+      "http_429_error_count": [
+        0,
+        5,
+        840,
+        3200,
+        6800,
+        7100
+      ],
+      "rate_limit_throttle_pct": [
+        0.0,
+        0.1,
+        15.0,
+        48.0,
+        64.0,
+        65.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-095",
+        "service": "api-gateway",
+        "version": "v4.0.0",
+        "timestamp": "2026-03-05T14:45:00Z",
+        "status": "SUCCESS",
+        "author": "sec-team",
+        "changelog": "Enable global DDoS token bucket rate limiter"
+      }
+    ],
+    "matched_runbook": "RB-GW-02: Rate Limiting & Proxy Client IP Resolution"
+  },
+  {
+    "id": "INC-113",
+    "title": "Kafka consumer group rebalance storm stalling message ingestion",
+    "service": "analytics-service",
+    "symptom": "analytics-consumer lag growing by 50,000 msgs/min; partitions constantly revoking and reassigning",
+    "root_cause": "max.poll.interval.ms set to 30s while batch processing of large documents takes up to 45s, causing Kafka coordinator to assume consumer died and trigger repeated rebalances.",
+    "confidence": 0.97,
+    "recommended_actions": [
+      "Increase max.poll.interval.ms from 30000 to 300000 (5 minutes)",
+      "Decrease max.poll.records from 500 to 50",
+      "Deploy analytics-service consumer configuration update"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-06T03:10:00Z",
+        "level": "WARN",
+        "service": "analytics-service",
+        "trace_id": "tr-113a",
+        "message": "org.apache.kafka.clients.consumer.CommitFailedException: Commit cannot be completed since the group has already rebalanced and assigned the partitions to another member. This means that the time between subsequent calls to poll() was longer than the configured max.poll.interval.ms."
+      },
+      {
+        "timestamp": "2026-03-06T03:10:30Z",
+        "level": "INFO",
+        "service": "analytics-service",
+        "trace_id": "tr-113b",
+        "message": "Attempting to join group analytics-consumer-group generation 42"
+      }
+    ],
+    "metrics": {
+      "consumer_lag_records": [
+        100,
+        1200,
+        15000,
+        48000,
+        120000,
+        240000
+      ],
+      "rebalance_count_per_hour": [
+        0,
+        1,
+        14,
+        38,
+        72,
+        85
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-199",
+        "service": "analytics-service",
+        "version": "v1.1.9",
+        "timestamp": "2026-03-05T20:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-mona",
+        "changelog": "Process full payload telemetry chunks in consumer"
+      }
+    ],
+    "matched_runbook": "RB-KAFKA-02: Consumer Group Rebalance Storms & Polling Timeouts"
+  },
+  {
+    "id": "INC-114",
+    "title": "Disk space saturation on primary database WAL storage volume",
+    "service": "user-service",
+    "symptom": "PostgreSQL database entered Read-Only mode; disk storage utilization at 99.8%",
+    "root_cause": "Abandoned replication slot `debezium_cdc_slot` retaining write-ahead log (WAL) segments without consumer draining.",
+    "confidence": 0.98,
+    "recommended_actions": [
+      "Drop inactive replication slot: `SELECT pg_drop_replication_slot('debezium_cdc_slot');`",
+      "Run pg_archivecleanup or allow checkpoint to reclaim WAL segments",
+      "Set `max_slot_wal_keep_size = 10GB` to prevent disk saturation from rogue slots"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-06T07:45:00Z",
+        "level": "FATAL",
+        "service": "user-service",
+        "trace_id": "tr-114a",
+        "message": "PANIC: could not write to file 'pg_wal/000000010000012A0000009F': No space left on device"
+      },
+      {
+        "timestamp": "2026-03-06T07:45:10Z",
+        "level": "ERROR",
+        "service": "user-service",
+        "trace_id": "tr-114b",
+        "message": "Database server failed to write WAL record, transitioning to read-only safe mode"
+      }
+    ],
+    "metrics": {
+      "disk_used_pct": [
+        72,
+        78,
+        86,
+        94,
+        98.5,
+        99.8
+      ],
+      "wal_segments_retained": [
+        24,
+        85,
+        340,
+        920,
+        1800,
+        2200
+      ],
+      "write_transactions_succeeded": [
+        1200,
+        1150,
+        800,
+        120,
+        0,
+        0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-045",
+        "service": "user-service",
+        "version": "v2.0.1",
+        "timestamp": "2026-02-20T10:00:00Z",
+        "status": "SUCCESS",
+        "author": "data-eng",
+        "changelog": "Set up CDC replication test"
+      }
+    ],
+    "matched_runbook": "RB-DB-03: PostgreSQL WAL Disk Saturation & Replication Slots"
+  },
+  {
+    "id": "INC-115",
+    "title": "Kubernetes CoreDNS packet loss causing DNS resolution timeouts",
+    "service": "user-service",
+    "symptom": "Intermittent 'UnknownHostException' and 'i/o timeout' resolving service cluster IPs across all pods",
+    "root_cause": "CoreDNS deployment underprovisioned at 2 replicas with conntrack table saturation on worker nodes causing dropped UDP DNS packets.",
+    "confidence": 0.94,
+    "recommended_actions": [
+      "Scale CoreDNS deployment to 6 replicas across distinct nodes",
+      "Enable NodeLocal DNSCache daemonset in Kubernetes cluster",
+      "Increase sysctl net.netfilter.nf_conntrack_max on worker nodes"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-06T11:20:00Z",
+        "level": "WARN",
+        "service": "user-service",
+        "trace_id": "tr-115a",
+        "message": "dial tcp: lookup auth-service.default.svc.cluster.local on 10.96.0.10:53: read udp 10.244.2.14:48123->10.96.0.10:53: i/o timeout"
+      },
+      {
+        "timestamp": "2026-03-06T11:21:00Z",
+        "level": "ERROR",
+        "service": "user-service",
+        "trace_id": "tr-115b",
+        "message": "Failed to resolve downstream service hostname after 3 retries"
+      }
+    ],
+    "metrics": {
+      "dns_lookup_latency_p99_ms": [
+        2,
+        3,
+        45,
+        1200,
+        2800,
+        3100
+      ],
+      "dns_udp_packet_drop_count": [
+        0,
+        2,
+        850,
+        4200,
+        9800,
+        11200
+      ],
+      "coredns_cpu_utilization": [
+        20,
+        30,
+        98,
+        100,
+        100,
+        100
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-010",
+        "service": "kube-system",
+        "version": "v1.28.0",
+        "timestamp": "2026-01-15T00:00:00Z",
+        "status": "SUCCESS",
+        "author": "infra-team",
+        "changelog": "Cluster upgrade"
+      }
+    ],
+    "matched_runbook": "RB-K8S-01: CoreDNS Saturation and UDP Packet Drop Resolution"
+  },
+  {
+    "id": "INC-116",
+    "title": "Cassandra NoSQL read timeout due to tombstone overflow",
+    "service": "user-service",
+    "symptom": "User profile queries failing with ReadTimeoutException / 'Scanned over 100,000 tombstones' warning",
+    "root_cause": "Frequent partial profile deletes without periodic compaction left >100,000 tombstone markers in SSTables, breaching tombstone_failure_threshold.",
+    "confidence": 0.95,
+    "recommended_actions": [
+      "Trigger nodetool garbagecollect or nodetool compact on user_profiles keyspace",
+      "Lower gc_grace_seconds temporarily to accelerate tombstone purge",
+      "Refactor profile update queries to avoid inserting null/delete markers repeatedly"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-06T14:00:10Z",
+        "level": "WARN",
+        "service": "user-service",
+        "trace_id": "tr-116a",
+        "message": "org.apache.cassandra.exceptions.ReadFailureException: Scanned over 100001 tombstones in user_profiles.users_by_id; query aborted (threshold: 100000)",
+        "stack_trace": "org.apache.cassandra.db.filter.TombstoneOverwhelmingException"
+      }
+    ],
+    "metrics": {
+      "cassandra_tombstones_scanned": [
+        50,
+        420,
+        18000,
+        65000,
+        100001,
+        100001
+      ],
+      "read_timeout_rate_pct": [
+        0.0,
+        0.1,
+        8.0,
+        42.0,
+        89.0,
+        92.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-049",
+        "service": "user-service",
+        "version": "v2.0.4",
+        "timestamp": "2026-03-05T16:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-raj",
+        "changelog": "Enable soft deletion on inactive profiles"
+      }
+    ],
+    "matched_runbook": "RB-NOSQL-01: Cassandra Tombstone Overflows & Read Timeouts"
+  },
+  {
+    "id": "INC-117",
+    "title": "AWS S3 rate limiting (HTTP 429 SlowDown) during bulk report generation",
+    "service": "analytics-service",
+    "symptom": "Bulk PDF export jobs failing with 'AmazonS3Exception: 429 SlowDown: Please reduce your request rate'",
+    "root_cause": "100 parallel workers writing to the exact same S3 key prefix `reports/2026/03/` exceeding the 3,500 PUT/s partition limit.",
+    "confidence": 0.96,
+    "recommended_actions": [
+      "Introduce hash-partitioned prefix naming (e.g. `reports/{hash}/2026/03/`) to distribute across S3 partitions",
+      "Configure exponential jitter backoff in AWS SDK S3Client",
+      "Throttle concurrent worker threads from 100 to 20"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-06T18:30:00Z",
+        "level": "ERROR",
+        "service": "analytics-service",
+        "trace_id": "tr-117a",
+        "message": "com.amazonaws.services.s3.model.AmazonS3Exception: SlowDown (Service: Amazon S3; Status Code: 429; Error Code: SlowDown; Request ID: K8X294)"
+      }
+    ],
+    "metrics": {
+      "s3_429_errors": [
+        0,
+        12,
+        450,
+        2100,
+        4800,
+        5200
+      ],
+      "s3_put_qps_per_prefix": [
+        200,
+        800,
+        3600,
+        5200,
+        5800,
+        6100
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-205",
+        "service": "analytics-service",
+        "version": "v1.2.2",
+        "timestamp": "2026-03-06T17:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-mona",
+        "changelog": "Parallelize bulk export jobs with 100 threads"
+      }
+    ],
+    "matched_runbook": "RB-STORAGE-01: S3 Partition Bottlenecks & 429 SlowDown Mitigation"
+  },
+  {
+    "id": "INC-118",
+    "title": "RabbitMQ memory alarm blocking message publishers",
+    "service": "notification-service",
+    "symptom": "Notification publisher connections blocked; HTTP POST /notify timing out",
+    "root_cause": "Unacknowledged messages in `push_notifications` queue accumulated to 1.8GB, exceeding RabbitMQ `vm_memory_high_watermark` (0.4) and triggering publisher flow control.",
+    "confidence": 0.97,
+    "recommended_actions": [
+      "Scale push-notification consumer worker pods from 2 to 10",
+      "Purge stuck dead-letter messages or set message TTL of 86400s",
+      "Temporarily increase vm_memory_high_watermark to 0.6 via rabbitmqctl"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T01:00:00Z",
+        "level": "WARN",
+        "service": "notification-service",
+        "trace_id": "tr-118a",
+        "message": "=WARNING REPORT==== memory resource limit alarm set on node rabbit@rabbit-node-1. Blocking publishes"
+      },
+      {
+        "timestamp": "2026-03-07T01:00:15Z",
+        "level": "ERROR",
+        "service": "notification-service",
+        "trace_id": "tr-118b",
+        "message": "Channel exception: connection closed by peer due to publisher flow control alarm"
+      }
+    ],
+    "metrics": {
+      "rabbitmq_memory_used_gb": [
+        1.1,
+        1.3,
+        1.7,
+        1.82,
+        1.85,
+        1.85
+      ],
+      "unacknowledged_messages": [
+        500,
+        4000,
+        45000,
+        180000,
+        320000,
+        340000
+      ],
+      "publisher_blocked_connections": [
+        0,
+        0,
+        18,
+        45,
+        50,
+        50
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-105",
+        "service": "notification-service",
+        "version": "v2.0.8",
+        "timestamp": "2026-03-01T00:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-sam",
+        "changelog": "Enable consumer prefetch count 1000"
+      }
+    ],
+    "matched_runbook": "RB-RABBIT-01: RabbitMQ Memory Alarms & Publisher Flow Control"
+  },
+  {
+    "id": "INC-119",
+    "title": "Go routine leak causing gradual memory and latency degradation",
+    "service": "inventory-service",
+    "symptom": "inventory-service memory steadily increasing over 72 hours; CPU usage spiking from idle spinning goroutines",
+    "root_cause": "HTTP client missing context cancellation in long-polling inventory listener, causing 2,000 abandoned goroutines per hour.",
+    "confidence": 0.96,
+    "recommended_actions": [
+      "Ensure `context.WithTimeout` is propagated to all outbound HTTP calls",
+      "Deploy inventory-service patch release v1.4.3",
+      "Inspect pprof goroutine stack dump via `/debug/pprof/goroutine?debug=1`"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T06:00:00Z",
+        "level": "WARN",
+        "service": "inventory-service",
+        "trace_id": "tr-119a",
+        "message": "Runtime diagnostic: Active goroutines count = 148,290 (normal baseline: ~400)"
+      },
+      {
+        "timestamp": "2026-03-07T06:05:00Z",
+        "level": "WARN",
+        "service": "inventory-service",
+        "trace_id": "tr-119b",
+        "message": "Goroutine leak detected in listener: app/poller.go:42 (blocked on chan receive)"
+      }
+    ],
+    "metrics": {
+      "active_goroutines": [
+        400,
+        12000,
+        45000,
+        98000,
+        135000,
+        148000
+      ],
+      "memory_usage_mb": [
+        80,
+        140,
+        320,
+        680,
+        1100,
+        1350
+      ],
+      "p95_latency_ms": [
+        15,
+        20,
+        45,
+        180,
+        420,
+        580
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-415",
+        "service": "inventory-service",
+        "version": "v1.4.2",
+        "timestamp": "2026-03-04T12:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-leo",
+        "changelog": "Add supplier stock polling listener"
+      }
+    ],
+    "matched_runbook": "RB-GO-01: Go Routine Leaks and Concurrency Diagnostics"
+  },
+  {
+    "id": "INC-120",
+    "title": "Elasticsearch cluster red status due to unassigned replica shards",
+    "service": "analytics-service",
+    "symptom": "Elasticsearch returning HTTP 503 'ClusterBlockException: cluster_block_exception [indices:data/read/search]'; cluster status RED",
+    "root_cause": "Node data-3 suffered EBS volume disconnect; primary shard on disconnected node went offline with no assigned replicas.",
+    "confidence": 0.97,
+    "recommended_actions": [
+      "Check AWS EBS volume attachment for node data-3 and reattach if detached",
+      "Execute POST /_cluster/reroute with allocate_empty_primary or retry failed allocation",
+      "Increase number_of_replicas to 1 on critical indices"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T09:30:00Z",
+        "level": "FATAL",
+        "service": "analytics-service",
+        "trace_id": "tr-120a",
+        "message": "ClusterHealth [status: RED, unassigned_shards: 12, active_primary_shards_pct: 78.4%]"
+      },
+      {
+        "timestamp": "2026-03-07T09:30:10Z",
+        "level": "ERROR",
+        "service": "analytics-service",
+        "trace_id": "tr-120b",
+        "message": "ElasticsearchStatusException[Unable to execute search: all shards failed]"
+      }
+    ],
+    "metrics": {
+      "unassigned_shards_count": [
+        0,
+        0,
+        12,
+        12,
+        12,
+        12
+      ],
+      "cluster_status_code": [
+        2,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      "search_error_rate_pct": [
+        0.0,
+        0.0,
+        95.0,
+        100.0,
+        100.0,
+        100.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-200",
+        "service": "analytics-service",
+        "version": "v1.2.1",
+        "timestamp": "2026-03-02T10:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-mona",
+        "changelog": "Standard indexing"
+      }
+    ],
+    "matched_runbook": "RB-ES-01: Elasticsearch Red Cluster Status & Shard Recovery"
+  },
+  {
+    "id": "INC-121",
+    "title": "Network partition between availability zones causing replication lag",
+    "service": "payment-service",
+    "symptom": "Cross-AZ database replica in us-east-1b lagging by 14,000 seconds behind primary in us-east-1a",
+    "root_cause": "AWS Direct Connect / Inter-AZ link degraded with 45% packet loss between us-east-1a and us-east-1b.",
+    "confidence": 0.93,
+    "recommended_actions": [
+      "Failover read-replica traffic to healthy replica in us-east-1c",
+      "Temporarily suspend cross-AZ asynchronous replication sync to degraded node",
+      "Monitor AWS Health Dashboard for VPC networking incident resolution"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T12:10:00Z",
+        "level": "WARN",
+        "service": "payment-service",
+        "trace_id": "tr-121a",
+        "message": "Postgres streaming replication: WAL sender process network write timeout to standby replica 10.0.2.45"
+      },
+      {
+        "timestamp": "2026-03-07T12:15:00Z",
+        "level": "ERROR",
+        "service": "payment-service",
+        "trace_id": "tr-121b",
+        "message": "Replication delay alert: replica-az-b lag is 14280s (> threshold 30s)"
+      }
+    ],
+    "metrics": {
+      "replication_lag_seconds": [
+        1,
+        2,
+        450,
+        3200,
+        8900,
+        14280
+      ],
+      "cross_az_packet_loss_pct": [
+        0.0,
+        0.1,
+        15.0,
+        38.0,
+        45.0,
+        45.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-300",
+        "service": "payment-service",
+        "version": "v1.9.0",
+        "timestamp": "2026-02-10T00:00:00Z",
+        "status": "SUCCESS",
+        "author": "dev-raj",
+        "changelog": "Initial deployment"
+      }
+    ],
+    "matched_runbook": "RB-NET-01: Cross-AZ Network Partition & Database Replication Lag"
+  },
+  {
+    "id": "INC-122",
+    "title": "Dependency version conflict after hotfix breaking JSON serialization",
+    "service": "user-service",
+    "symptom": "HTTP 500 error on GET /api/v1/users/{id} with IncompatibleClassChangeError / Jackson serialization crash",
+    "root_cause": "Hotfix commit forced jackson-databind 2.15.0 while jackson-core remained 2.12.3 in pom.xml, causing binary incompatibility at runtime.",
+    "confidence": 0.99,
+    "recommended_actions": [
+      "Align all Jackson dependencies (core, databind, annotations) to 2.15.2 via Maven BOM import",
+      "Roll back user-service to release v2.0.3",
+      "Add maven-enforcer-plugin rule to fail CI builds on dependency convergence errors"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T16:00:05Z",
+        "level": "FATAL",
+        "service": "user-service",
+        "trace_id": "tr-122a",
+        "message": "java.lang.NoSuchMethodError: 'com.fasterxml.jackson.core.util.JacksonFeatureSet com.fasterxml.jackson.databind.ObjectMapper.getRegisteredModuleTypes()'",
+        "stack_trace": "com.fasterxml.jackson.databind.ObjectMapper.write(ObjectMapper.java:1240)\n\tat com.enterprise.users.controller.UserController.getUser(UserController.java:82)"
+      }
+    ],
+    "metrics": {
+      "http_5xx_count": [
+        0,
+        0,
+        450,
+        2100,
+        4800,
+        5200
+      ],
+      "error_rate_pct": [
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-055",
+        "service": "user-service",
+        "version": "v2.0.5",
+        "timestamp": "2026-03-07T15:55:00Z",
+        "status": "SUCCESS",
+        "author": "dev-alex",
+        "changelog": "Hotfix: bump jackson-databind to resolve CVE-2024-1234"
+      }
+    ],
+    "matched_runbook": "RB-DEP-01: JVM Dependency Conflicts & Runtime Classpath Mismatches"
+  },
+  {
+    "id": "INC-123",
+    "title": "Secret Manager IAM permission revocation during credential rotation",
+    "service": "order-service",
+    "symptom": "order-service pods failing to start with AccessDeniedException: User not authorized to perform: secretsmanager:GetSecretValue",
+    "root_cause": "Terraform IAM policy update inadvertently removed `secretsmanager:GetSecretValue` permission from the order-service Kubernetes IAM service account role.",
+    "confidence": 0.99,
+    "recommended_actions": [
+      "Reapply Terraform IAM policy restoring `secretsmanager:GetSecretValue` on arn:aws:secretsmanager:*:*:secret:order-service-*",
+      "Trigger pod rollout restart to re-read credentials",
+      "Add Terraform drift detection & plan testing in pull request checks"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-07T20:00:10Z",
+        "level": "FATAL",
+        "service": "order-service",
+        "trace_id": "tr-123a",
+        "message": "com.amazonaws.services.secretsmanager.model.AWSSecretsManagerException: User: arn:aws:sts::123456789012:assumed-role/order-service-sa is not authorized to perform: secretsmanager:GetSecretValue on resource: db-credentials (Service: AWSSecretsManager; Status Code: 400; Error Code: AccessDeniedException)"
+      }
+    ],
+    "metrics": {
+      "ready_pod_count": [
+        5,
+        5,
+        2,
+        0,
+        0,
+        0
+      ],
+      "iam_permission_denied_errors": [
+        0,
+        0,
+        12,
+        45,
+        90,
+        120
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-895",
+        "service": "order-service",
+        "version": "v2.4.2",
+        "timestamp": "2026-03-07T19:45:00Z",
+        "status": "SUCCESS",
+        "author": "infra-bot",
+        "changelog": "Terraform apply: IAM least-privilege role hardening"
+      }
+    ],
+    "matched_runbook": "RB-SEC-02: Cloud IAM Permission Denials & Secret Access Failures"
+  },
+  {
+    "id": "INC-124",
+    "title": "Nginx ingress worker process segfault on malformed HTTP/2 headers",
+    "service": "api-gateway",
+    "symptom": "api-gateway dropped 25% of connections with 502 Bad Gateway; dmesg reporting 'nginx[14210]: segfault'",
+    "root_cause": "Known upstream Nginx bug in HTTP/2 CONTINUATION frame processing triggering worker crash on oversized header sequences.",
+    "confidence": 0.98,
+    "recommended_actions": [
+      "Upgrade ingress-nginx controller to v1.10.1 containing fix for CVE-2024-24919",
+      "Temporarily disable HTTP/2 on ingress controller or enable `large_client_header_buffers 4 16k`",
+      "Block incoming requests with header size > 8KB at WAF edge"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-08T02:15:00Z",
+        "level": "FATAL",
+        "service": "api-gateway",
+        "trace_id": "tr-124a",
+        "message": "kernel: [18294.12] nginx[14210]: segfault at 7fff9028 ip 00007f9202 sp 00007fff error 4 in nginx[5567a+140000]"
+      },
+      {
+        "timestamp": "2026-03-08T02:15:05Z",
+        "level": "ERROR",
+        "service": "api-gateway",
+        "trace_id": "tr-124b",
+        "message": "upstream prematurely closed connection while reading response header from upstream"
+      }
+    ],
+    "metrics": {
+      "nginx_worker_crashes": [
+        0,
+        0,
+        4,
+        18,
+        42,
+        60
+      ],
+      "http_502_error_pct": [
+        0.0,
+        0.0,
+        5.2,
+        18.0,
+        24.5,
+        25.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-090",
+        "service": "api-gateway",
+        "version": "v3.9.9",
+        "timestamp": "2026-02-01T00:00:00Z",
+        "status": "SUCCESS",
+        "author": "infra-team",
+        "changelog": "Legacy ingress deployment"
+      }
+    ],
+    "matched_runbook": "RB-GW-03: Ingress Nginx Segfaults & HTTP/2 Vulnerability Mitigation"
+  },
+  {
+    "id": "INC-125",
+    "title": "PostgreSQL transaction ID wraparound emergency shutdown",
+    "service": "payment-service",
+    "symptom": "PostgreSQL refused all write queries with: 'FATAL: database is not accepting commands to avoid wraparound data loss in database payment_db'",
+    "root_cause": "Autovacuum was disabled on high-throughput table `payment_transactions` via storage parameter `autovacuum_enabled = false`, causing transaction age to reach 2 billion limit.",
+    "confidence": 0.99,
+    "recommended_actions": [
+      "Start PostgreSQL in single-user mode: `postgres --single -D /var/lib/postgresql/data payment_db`",
+      "Execute aggressive vacuum freeze: `VACUUM FREEZE VERBOSE;`",
+      "Re-enable autovacuum on all tables: `ALTER TABLE payment_transactions RESET (autovacuum_enabled);`"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-03-08T08:00:00Z",
+        "level": "FATAL",
+        "service": "payment-service",
+        "trace_id": "tr-125a",
+        "message": "FATAL: database is not accepting commands to avoid wraparound data loss in database 'payment_db'\nHINT: Stop the postmaster and vacuum that database in single-user mode."
+      },
+      {
+        "timestamp": "2026-03-08T08:00:05Z",
+        "level": "ERROR",
+        "service": "payment-service",
+        "trace_id": "tr-125b",
+        "message": "All database write operations halted by server protection mechanism"
+      }
+    ],
+    "metrics": {
+      "txid_age_to_wraparound": [
+        1800000000,
+        1920000000,
+        2000000000,
+        2000000000,
+        2000000000,
+        2000000000
+      ],
+      "db_write_availability_pct": [
+        100.0,
+        100.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "deployments": [
+      {
+        "deployment_id": "dep-305",
+        "service": "payment-service",
+        "version": "v1.9.2",
+        "timestamp": "2026-02-18T10:00:00Z",
+        "status": "SUCCESS",
+        "author": "db-admin",
+        "changelog": "Disable autovacuum during large data backfill"
+      }
+    ],
+    "matched_runbook": "RB-DB-04: PostgreSQL Transaction ID Wraparound & Emergency Vacuum"
+  }
+]

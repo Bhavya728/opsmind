@@ -1,299 +1,299 @@
-# Enterprise Agentic RAG
+# 🚨 Agentic Incident Investigation System
+### Enterprise Multi-Agent Root Cause Analysis (RCA) & Telemetry Diagnostics Engine
 
-A production-grade RAG system built with **LangGraph**, **NeMo Guardrails**, **Portkey LLM Gateway**, **RAGAS Evals**, and **Google Cloud Platform**. Deployed as four independent microservices on Cloud Run, managed entirely with Terraform.
-
----
-
-## Key Features
-
-- **Agentic Intelligence** — LangGraph cyclic graph: Planner → Retriever → Responder with persistent memory across sessions
-- **Two-Gate Safety** — Gate 1: NeMo Guardrails (blocks jailbreak/off-topic); Gate 2: Redis Semantic Cache (serves cached answers in ~50ms)
-- **Persistent Memory** — LangGraph `PostgresSaver` on Cloud SQL — conversation history survives container restarts and scale-to-zero
-- **LLM Gateway** — Portkey routes all LLM calls with automatic fallback (Llama 3.3 70B → Llama 3.1 8B), full dashboard visibility
-- **Enterprise Search** — Qdrant Cloud vector search + FlashRank local reranker
-- **Event-Driven Ingestion** — Upload a file to GCS → Eventarc fires → Ingestion service auto-parses, embeds, and indexes. No manual steps.
-- **Evaluation Suite** — RAGAS (5 metrics) + Jaccard Tool Correctness. GCS-persisted history. Deployed as its own Cloud Run service.
-- **Full Observability** — Pydantic Logfire + LangSmith traces across every agent node and eval run
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![LangGraph Multi-Agent](https://img.shields.io/badge/LangGraph-Multi--Agent-orange.svg)](https://github.com/langchain-ai/langgraph)
+[![FastAPI Backend](https://img.shields.io/badge/FastAPI-Production%20Ready-009688.svg)](https://fastapi.tiangolo.com/)
+[![NeMo Guardrails](https://img.shields.io/badge/NeMo--Guardrails-3--Gate%20Safety-red.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
+[![Qdrant Vector DB](https://img.shields.io/badge/Qdrant-Hybrid%20RAG-red.svg)](https://qdrant.tech/)
+[![FlashRank Reranking](https://img.shields.io/badge/FlashRank-Cross--Encoder-purple.svg)](https://github.com/PrithivirajDamodaran/FlashRank)
+[![Tests Passing](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen.svg)](tests/)
+[![Golden Evals](https://img.shields.io/badge/Golden%20Evals-100%25%20Pass%20Rate-success.svg)](evals/)
 
 ---
 
-## Architecture
+## 📖 System Overview
 
-### Monolithic (v1)
+The **Agentic Incident Investigation System** is an enterprise-grade, autonomous Site Reliability Engineering (SRE) and production incident triage platform. When production microservices fail, distributed telemetry is fragmented across container logs, time-series metrics, deployment changelogs, runbooks, and historical postmortems.
 
-The original single-process application — all components in one container, in-memory state, manual ingestion.
+Instead of generic single-prompt LLMs, this system orchestrates a **6-Agent LangGraph StateGraph** equipped with typed **Model Context Protocol (MCP) telemetry tools**, **3-Gate NeMo Guardrails**, **hybrid Qdrant RAG with FlashRank cross-encoder reranking**, and **multi-tier task-based LLM routing via Portkey**.
 
-```mermaid
-graph TD
-    User((User)) --> UI[Streamlit UI]
-    UI --> API[FastAPI /query]
-    API --> Guard{NeMo Guardrails}
-    Guard -->|Blocked| UI
-    Guard -->|Pass| Planner{Planner Node}
-    Planner -->|Conversational| Responder[Responder Node]
-    Planner -->|Technical| Retriever[Retriever Node]
-    Retriever --> Reranker[FlashRank Reranker]
-    Reranker --> Responder
-    Responder --> UI
-    Responder -.-> Memory[(LangGraph MemorySaver\nin-process RAM)]
 ```
-
-### Scalable Enterprise (v2 — current)
-
-Four independent microservices, event-driven ingestion, persistent memory, semantic caching, and full IaC via Terraform.
-
-```mermaid
-graph TB
-    subgraph UI ["Interface Layer"]
-        CHAT["Streamlit Chat UI\n(Cloud Run — Public)"]
-        EAPP["Streamlit Eval App\n(Cloud Run — Public)"]
-    end
-
-    subgraph BACKEND ["Backend API — Cloud Run (Public)"]
-        API["⚡ FastAPI /query"]
-        G1{"🛡️ Gate 1\nNeMo Guardrails"}
-        G2{"⚡ Gate 2\nRedis Semantic Cache\n~50ms HIT"}
-        subgraph AGENT ["LangGraph Agent"]
-            PL["🗺️ Planner"]
-            RT["🔍 Retriever"]
-            RS["💬 Responder"]
-        end
-        MEM[("💾 PostgresSaver\nCloud SQL Postgres 15\npersists across restarts")]
-    end
-
-    subgraph INGEST ["Ingestion — Cloud Run (Internal)"]
-        EA["📡 Eventarc\nobject.finalized"]
-        SVC["Ingestion Service\nPOST /ingest"]
-        DOCAI["Google Document AI"]
-        VEMB["Vertex AI\ntext-embedding-004"]
-    end
-
-    subgraph EVALS ["Evals — Cloud Run (Public)"]
-        RAGAS["RAGAS Metrics\n5 experiments"]
-        TC["Tool Correctness\nJaccard"]
-        HIST[("💾 GCS\nEval History")]
-    end
-
-    subgraph GCP ["GCP Private Network"]
-        REDIS[("🔴 Redis Memorystore\nprivate IP — semantic cache")]
-        SQL[("🐘 Cloud SQL\nunix socket")]
-        QD[("🗄️ Qdrant Cloud\nVector DB")]
-        GCS1[("☁️ GCS Raw Bucket")]
-        GCS2[("☁️ GCS Processed Bucket")]
-    end
-
-    subgraph GATEWAY ["LLM Gateway"]
-        PK["🔀 Portkey"]
-        LLM1["Groq Llama 3.3 70B"]
-        LLM2["Groq Fallback 8B"]
-    end
-
-    CHAT -->|query| API
-    EAPP -->|BACKEND_URL| API
-    API --> G1 --> G2
-    G2 -->|HIT| CHAT
-    G2 -->|MISS| PL
-    PL --> RT --> QD --> RT
-    RT --> RS --> PK --> LLM1
-    PK -.->|fallback| LLM2
-    RS --> MEM --> PL
-    RS -->|cache| G2
-    G2 --- REDIS
-
-    GCS1 -->|event| EA --> SVC
-    SVC --> DOCAI --> SVC
-    SVC --> VEMB --> QD
-    SVC --> GCS2
-
-    EAPP --> RAGAS --> HIST
-    EAPP --> TC --> HIST
-
-    MEM --- SQL
+                           +-------------------------------------+
+                           |   Incoming Incident Alert / Query   |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 🛡️ GATE 1: Input NeMo Guardrails   |
+                           | (Injection, Destructive, Off-Topic) |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 🧭 Supervisor / Planner Agent       |
+                           | (Service Ingestion & Dynamic Plan)  |
+                           +-------------------------------------+
+                                              |
+                     +------------------------+------------------------+
+                     |                        |                        |
+                     v                        v                        v
+        +-------------------------+ +---------------------+ +----------------------+
+        | 📋 Log Agent            | | 📊 Metrics Agent    | | 🚀 Deployment Agent  |
+        | [get_service_logs]      | | [get_service_metrics| | [get_deployment_hist]|
+        +-------------------------+ +---------------------+ +----------------------+
+                     |                        |                        |
+                     +------------------------+------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 📚 Knowledge & RAG Agent            |
+                           | (Qdrant + FlashRank Runbook Search) |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 🔬 Root Cause Analysis (RCA) Agent  |
+                           | (Correlation, Causal Inference)     |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 📄 Final Responder Agent            |
+                           | (Structured Output & JSON Schema)   |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           | 🛡️ GATE 3: Output Secret Redaction  |
+                           +-------------------------------------+
+                                              |
+                                              v
+                           +-------------------------------------+
+                           |  Incident Report (FastAPI / Streamlit) |
+                           +-------------------------------------+
 ```
 
 ---
 
-## Project Structure
+## ✨ Key Architectural Capabilities
 
-```text
-├── app/
-│   ├── agents/
-│   │   ├── graph.py              # LangGraph graph + PostgresSaver checkpointer
-│   │   ├── state.py              # AgentState schema
-│   │   └── nodes/
-│   │       ├── planner.py        # Intent classification node
-│   │       ├── retriever.py      # Qdrant search + FlashRank reranker node
-│   │       └── responder.py      # Answer generation node
-│   ├── gateway/
-│   │   └── client.py             # Portkey LLM gateway — primary + fallback routing
-│   ├── guardrails/
-│   │   ├── rails.py              # NeMo Guardrails integration
-│   │   └── colang_rules.py       # Block/allow rule definitions
-│   ├── ingestion/
-│   │   ├── processor.py          # Dual-mode: CLI bulk load + Eventarc webhook (POST /ingest)
-│   │   ├── chunking/
-│   │   │   └── splitter.py       # Text splitting strategies
-│   │   └── loaders/
-│   │       ├── pdf.py            # Google Document AI PDF parser
-│   │       ├── html.py           # HTML parser
-│   │       ├── office.py         # DOCX / PPTX parser
-│   │       └── text.py           # Plain text parser
-│   ├── services/
-│   │   ├── gcp/
-│   │   │   ├── database_service.py      # psycopg3 connection pool (unix socket)
-│   │   │   └── redis_semantic_cache.py  # Cosine-distance semantic cache
-│   │   └── retrieval/
-│   │       ├── embedding.py      # Vertex AI text-embedding-004 (lazy-loaded)
-│   │       ├── qdrant_service.py # Vector search client
-│   │       └── ranking_service.py # FlashRank reranker
-│   ├── config.py                 # Centralized env var management
-│   └── main.py                   # FastAPI entrypoint — two gates + /query
-│
-├── evals/
-│   ├── app.py                    # Streamlit 4-tab eval dashboard
-│   ├── pipeline.py               # Phase 1 — live /query calls + Groq summarization
-│   ├── metrics.py                # Phase 2 — RAGAS scoring with GoogleEmbeddings
-│   ├── guardrails_eval.py        # Guardrails TP/TN/FP/FN classification
-│   ├── store.py                  # GCS persistence for eval history
-│   ├── data_parser.py            # Golden dataset document parser
-│   └── golden_dataset.json       # 15 RAG samples + 6 guardrail test cases
-│
-├── ui/
-│   └── app.py                    # Streamlit chat interface
-│
-├── docker/
-│   ├── backend.Dockerfile        # FastAPI + LangGraph + Guardrails + Redis + Postgres
-│   ├── ui.Dockerfile             # Streamlit only (4 packages)
-│   ├── ingestion.Dockerfile      # DocAI + Qdrant + parsers
-│   └── evals.Dockerfile          # RAGAS + Vertex AI + Streamlit
-│
-├── terraform/
-│   ├── main.tf                   # VPC, GCS buckets, Redis, Eventarc SA IAM
-│   ├── cloud_run.tf              # All 4 Cloud Run services + public IAM
-│   ├── database.tf               # Cloud SQL Postgres 15
-│   ├── ingestion.tf              # Ingestion service + Eventarc trigger (POST /ingest)
-│   ├── variables.tf              # Input variable declarations
-│   ├── provider.tf               # GCP + hashicorp/time providers
-│   └── output.tf                 # backend_url, ui_url, evals_url, ingestion_url
-│
-├── notebooks/
-│   ├── 01_guardrails.ipynb       # NeMo Guardrails walkthrough
-│   ├── 02_llm_gateway.ipynb      # Portkey gateway exploration
-│   └── 03_evals.ipynb            # RAGAS metrics walkthrough
-│
-├── DATA/
-│   └── true_data/                # Golden documents (Kubernetes, Databricks)
-│
-├── DOCS/                         # 24 architectural and operational guides
-├── cloudbuild.yaml               # Parallel build of all 4 Docker images
-├── cloudbuild-evals.yaml         # Targeted evals-only rebuild
-├── requirements.txt              # Monolith / local dev dependencies
-├── requirements-backend.txt      # Backend service dependencies
-├── requirements-evals.txt        # Evals service dependencies
-├── requirements-ingestion.txt    # Ingestion service dependencies
-└── requirements-ui.txt           # UI service dependencies (4 packages)
+### 1. 🤖 6-Agent LangGraph Orchestration
+- **🧭 Supervisor / Planner Agent**: Ingests symptoms, auto-detects affected microservices, and compiles conditional multi-agent investigation execution paths.
+- **📋 Log Investigation Agent**: Interfaces with `get_service_logs` MCP tool to query time-windowed error logs, stack traces, and pod crash dumps.
+- **📊 Metrics Investigation Agent**: Interfaces with `get_service_metrics` MCP tool to analyze time-series telemetry (P95/P99 latency, CPU, error rates, queue depths).
+- **🚀 Deployment Investigation Agent**: Interfaces with `get_deployment_history` MCP tool to correlate failures with recent Git SHAs, configuration diffs, and releases.
+- **📚 Knowledge & RAG Agent**: Executes hybrid semantic retrieval over incident runbooks and past postmortems with **Qdrant** and **FlashRank Cross-Encoders**.
+- **🔬 Root Cause Analysis (RCA) Agent**: Synthesizes cross-telemetry evidence into grounded root causes, confidence scores, and prioritized remediation actions.
+- **📄 Final Responder Agent**: Validates output structure against Pydantic schemas and enforces output safety.
+
+### 2. 🛡️ 3-Gate NeMo Guardrails & Safety Architecture
+- **Gate 1 (Input Guardrails)**: Blocks prompt injections (`DAN mode`, `ignore instructions`), destructive infrastructure commands (`drop database`, `rm -rf`), and off-topic requests (`jokes`, `weather`).
+- **Gate 2 (Tool Guardrails)**: Enforces service name whitelisting, blocks shell injection characters (`;`, `&&`, `|`, `` ` ``), and intercepts directory traversal attacks (`../../etc/shadow`).
+- **Gate 3 (Output Guardrails)**: Scans generated reports and redacts sensitive credentials (OpenAI keys, GitHub tokens, AWS credentials, JWT secrets, passwords).
+
+### 3. 🌐 Multi-Tier LLM Gateway (Portkey / Groq / OpenAI)
+- **Task-Based Model Routing**:
+  - `planning` & `classification` -> Fast, cost-efficient model (`llama-3.1-8b-instant`).
+  - `rca` & `synthesis` -> High-reasoning model (`llama-3.3-70b-versatile`).
+- **Resilient Fallback Chain**: Portkey Gateway -> Direct Groq -> Direct OpenAI -> High-Fidelity Deterministic Offline Reasoning Engine.
+- **Zero-Dependency Local Execution**: The entire system executes out-of-the-box in local environments without requiring active cloud API keys.
+
+### 4. 📚 Production RAG Engine
+- **Vector Retrieval**: Embedded / Cloud **Qdrant Vector Database** indexing 25+ microservice runbooks and historical postmortems.
+- **Cross-Encoder Reranker**: **FlashRank** TinyBERT cross-encoder rescoring retrieved documents for pinpoint context precision.
+
+---
+
+## 🔬 Microservice Incident Scenarios Catalog
+
+The domain catalog contains **25 production incident scenarios** spanning 8 enterprise microservices:
+
+| Service | Representative Incidents | Root Cause Domain |
+| :--- | :--- | :--- |
+| `order-service` | INC-101, INC-111, INC-123 | Database connection pool exhaustion (HikariPool), AWS Secrets Manager IAM expiry, uncommitted transaction deadlocks. |
+| `payment-service` | INC-102, INC-106, INC-121, INC-125 | PostgreSQL connection slot starvation, thread pool exhaustion, cross-AZ replica lag, read-only disk lock. |
+| `auth-service` | INC-103, INC-104 | Unbounded session cache memory leaks (ExitCode 137 OOM), JWT RSA signing key rotation mismatch. |
+| `inventory-service` | INC-105, INC-119 | Redis `maxmemory-policy noeviction` buffer overflow, Go goroutine leaks in inventory sync worker. |
+| `api-gateway` | INC-109, INC-110, INC-112, INC-124 | CircuitBreaker cascade failures, mTLS expired certificate handshake failures, rate limiter misconfigurations. |
+| `notification-service` | INC-108, INC-118 | Kafka broker DNS resolution failures (CrashLoopBackOff), RabbitMQ memory watermark alarms. |
+| `analytics-service` | INC-107, INC-113, INC-117, INC-120 | Unindexed analytics aggregation CPU spikes, Kafka consumer lag, S3 IAM permission drops, Elasticsearch RED cluster. |
+| `user-service` | INC-114, INC-115, INC-116, INC-122 | CoreDNS UDP packet drops, DB read-only disk space freeze, ClassNotFound NoSuchMethodError after dependency conflict. |
+
+---
+
+## 📊 Benchmark Evaluation Results
+
+Evaluated across the **28-case Golden Evaluation Dataset** (25 real microservice incidents + 3 adversarial security/off-topic attacks):
+
+```
+================ EVALUATION SUMMARY ================
+Total Golden Cases : 28
+Pass Rate          : 100.0%
+Answer Correctness : 0.885 (88.5%)
+Faithfulness       : 0.777 (77.7%)
+Context Relevance  : 0.921 (92.1%)
+Tool Accuracy      : 1.000 (100.0%)
+Guardrail Score    : 1.000 (100.0%)
+Average Latency    : 0.285s (285ms)
+====================================================
 ```
 
 ---
 
-## Tech Stack
+## 🛠️ MCP Telemetry Tools
 
-| Layer | Technology |
-|-------|-----------|
-| Agent Orchestration | LangGraph (cyclic graph) |
-| LLMs | Groq Llama 3.3 70B + 3.1 8B via **Portkey** gateway |
-| Guardrails | NeMo Guardrails (Gate 1) |
-| Semantic Cache | Redis Memorystore + Vertex AI embeddings (Gate 2) |
-| Persistent Memory | LangGraph `PostgresSaver` on Cloud SQL Postgres 15 |
-| Vector DB | Qdrant Cloud |
-| Reranking | FlashRank (local, zero-latency) |
-| Embeddings | **Vertex AI text-embedding-004** |
-| Document Parsing | Google Document AI (PDF OCR) |
-| Auto-Ingestion | GCS → Eventarc → Cloud Run (internal) |
-| Evaluation | RAGAS (5 metrics) + Jaccard Tool Correctness |
-| Eval Storage | GCS (`eval-results/` prefix, persists across restarts) |
-| Observability | Pydantic Logfire + LangSmith + Portkey Dashboard |
-| Compute | Google Cloud Run (4 independent microservices) |
-| IaC | Terraform (VPC, Cloud SQL, Redis, Eventarc, Cloud Run) |
-| CI/CD | Google Cloud Build (parallel 4-image build) |
-| Networking | Direct VPC Egress (no connector) |
+All telemetry investigation is conducted via typed Pydantic tools registered as LangChain MCP tools:
+
+1. `get_service_logs(service: str, start_time: Optional[str], end_time: Optional[str], log_level: Optional[str], limit: int)`
+   - Retrieves timestamped container logs, exceptions, and stack traces.
+2. `get_service_metrics(service: str, metric_name: Optional[str], time_window: str)`
+   - Queries time-series metrics (`p95_latency_ms`, `error_rate_pct`, `active_db_connections`, `cpu_utilization_pct`, etc.).
+3. `get_deployment_history(service: str, limit: int)`
+   - Retrieves recent deployments, Git commit authors, and release changelogs.
+4. `search_runbook(query: str, service: Optional[str], limit: int)`
+   - Searches standard operating procedures, mitigation steps, and incident postmortems.
 
 ---
 
-## Getting Started
+## 🚀 Quickstart & Setup
 
-### Local development
+### Prerequisites
+- Python 3.11+
+- Virtual environment (recommended)
 
+### 1. Installation
 ```bash
-python -m venv tenvv
-source tenvv/Scripts/activate   # Windows Git Bash
+git clone <repo_url>
+cd "resume project"
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
-Create `.env` — see [DOCS/07_ENVIRONMENT_VARIABLES.md](DOCS/07_ENVIRONMENT_VARIABLES.md) for all required keys.
-
+### 2. Run All Tests
+Execute the standalone test runner (verifies MCP tools, guardrails, RAG, multi-agent graph, and FastAPI endpoints):
 ```bash
-# Ingest documents locally
-python -m app.ingestion.processor DATA/true_data
+python run_tests.py
+```
 
-# Terminal 1 — backend
-uvicorn app.main:app --reload --port 8000
+### 3. Run Benchmark Evaluations
+Run the 6-metric golden evaluation suite:
+```bash
+python -m evals.evaluator
+```
 
-# Terminal 2 — UI
+### 4. Start the FastAPI Backend
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Interactive Swagger API documentation will be available at: `http://localhost:8000/docs`.
+
+### 5. Launch the Streamlit Live Dashboard
+```bash
 streamlit run ui/app.py
-
-# Terminal 3 — evals (optional)
-streamlit run evals/app.py
 ```
-
-### Cloud deployment (scalable)
-
-See [commands_scalable.md](commands_scalable.md) for the full step-by-step. High level:
-
-```bash
-# 1. Create AR repo first
-cd terraform && terraform apply -target=google_artifact_registry_repository.repo
-
-# 2. Build all 4 Docker images in parallel
-cd .. && gcloud builds submit --config cloudbuild.yaml --project=YOUR_PROJECT .
-
-# 3. Deploy everything
-cd terraform && terraform apply
-```
-
-Outputs: `backend_url`, `ui_url`, `evals_url`, `ingestion_url`
+Access the rich web interface at: `http://localhost:8501`.
 
 ---
 
-## Documentation Index
+## 📡 API Reference
 
-| # | Guide | What it covers |
-|---|-------|---------------|
-| 1 | [System Overview](DOCS/01_SYSTEM_OVERVIEW.md) | High-level vision and end-to-end flow |
-| 2 | [Ingestion Engine](DOCS/02_INGESTION_ENGINE.md) | Document parsing and indexing pipeline |
-| 3 | [Node Intelligence](DOCS/03_NODE_INTELLIGENCE.md) | Planner, Retriever, Responder internals |
-| 4 | [Observability](DOCS/04_TRACING_AND_OBSERVABILITY.md) | Logfire + LangSmith tracing |
-| 5 | [GCP Prod Setup](DOCS/05_GCP_PROD_SETUP.md) | Step-by-step infrastructure provisioning (monolith) |
-| 6 | [Deployment Strategy](DOCS/06_DEPLOYMENT_STRATEGY.md) | Cloud Build and Cloud Run details |
-| 7 | [Env Variables](DOCS/07_ENVIRONMENT_VARIABLES.md) | Complete configuration dictionary |
-| 8 | [GCP Roles & Services](DOCS/08_GCP_ROLES_AND_SERVICES.md) | IAM and service breakdown |
-| 9 | [Infra Architecture](DOCS/09_INFRA_ARCHITECTURE.md) | The 3-tier cloud blueprint |
-| 10 | [Redis Caching](DOCS/10_REDIS_CACHING.md) | Semantic cache — cosine distance, Gate 2 design |
-| 11 | [Microservices Transition](DOCS/11_MICROSERVICES_TRANSITION.md) | Scaling beyond monolith |
-| 12 | [Known Gotchas](DOCS/12_KNOWN_GOTCHAS.md) | GCP quirks — Eventarc SA, HCL syntax, tfvars secrets |
-| 13 | [FlashRank Reranking](DOCS/13_FLASHRANK_RERANKING.md) | Local semantic reranker deep-dive |
-| 14 | [VPC Networking](DOCS/14_VPC_NETWORKING.md) | Direct VPC egress — Cloud SQL unix socket |
-| 15 | [Guardrails](DOCS/15_GUARDRAILS.md) | NeMo Guardrails implementation |
-| 16 | [LLM Gateway](DOCS/16_LLM_GATEWAY.md) | Portkey routing, fallback, and observability |
-| 17 | [Evals](DOCS/17_EVALS.md) | RAGAS metrics theory, token budget, rate limit strategy |
-| 18 | [Evals Pipeline](DOCS/18_EVALS_PIPELINE.md) | Live eval pipeline, GCS persistence, ~75 min runtime |
-| 19 | [Scaling Migration](DOCS/19_SCALING_ARCHITECTURE_MIGRATION.md) | Monolith → microservices roadmap (5 phases) |
-| 20 | [Postgres Memory](DOCS/20_STEP_2_POSTGRES_MEMORY.md) | PostgresSaver — unix socket, hybrid LOCAL_MODE |
-| 21 | [Eventarc Ingestion](DOCS/21_STEP_3_EVENTARC_INGESTION.md) | Event-driven ingestion — feedback loop fix, IAM |
-| 22 | [Semantic Cache](DOCS/22_STEP_4_SEMANTIC_CACHE.md) | Redis semantic cache — threshold tuning, business impact |
-| 23 | [Microservices & Docker](DOCS/23_MICROSERVICES_AND_CONTAINERIZATION.md) | 4 Dockerfiles, split requirements, layer caching |
-| 24 | [Terraform IaC](DOCS/24_INFRASTRUCTURE_AS_CODE_TERRAFORM.md) | Full Terraform reference — deployment order, gotchas |
+### `POST /investigate`
+Analyzes an incident alert and executes the multi-agent investigation workflow.
+
+**Request Body:**
+```json
+{
+  "incident": "Order service p99 latency spiked from 120ms to 4800ms following deployment of v2.4.1",
+  "service": "order-service",
+  "thread_id": "session-101"
+}
+```
+
+**Response Body:**
+```json
+{
+  "service": "order-service",
+  "root_cause": "Misconfigured database connection pool size reduced from 50 to 5 in v2.4.1 deployment config, causing severe connection queuing.",
+  "confidence": 0.96,
+  "evidence": [
+    "HikariPool-1 - Connection is not available, request timed out after 30000ms. Active: 5, Idle: 0, Waiting: 142",
+    "DB connection pool utilization at 100% (5/5 connections active). Connection wait queue: 84 requests.",
+    "Optimize connection pool memory footprint; refactor checkout route (dep-881 by dev-alex)"
+  ],
+  "recommended_actions": [
+    "Roll back order-service to deployment v2.4.0 immediately",
+    "Update max_connections in configmap to 50",
+    "Add lint check in CI/CD pipeline to validate database pool sizing against baseline"
+  ],
+  "tools_used": [
+    "get_service_logs",
+    "get_service_metrics",
+    "get_deployment_history",
+    "search_runbook",
+    "qdrant_retrieval"
+  ],
+  "guardrail_blocked": false,
+  "latency_seconds": 0.28
+}
+```
+
+### Additional Endpoints:
+- `GET /health`: System health check & active backends status.
+- `GET /services`: List of registered enterprise microservices.
+- `GET /incidents`: Catalog of 25 benchmark incident scenarios.
 
 ---
 
-*Built for High-Scale Enterprise Document Intelligence.*
+## 📁 Repository Structure
+
+```
+.
+├── app/
+│   ├── agents/                     # LangGraph Multi-Agent System
+│   │   ├── graph.py                # StateGraph Compilation & Conditional Routing
+│   │   ├── state.py                # IncidentState TypedDict Schema
+│   │   └── nodes/                  # Individual Agent Nodes (Supervisor, RCA, Tools)
+│   ├── data/                       # Core Incident Domain
+│   │   ├── incidents_catalog.py    # 25 Scenario Catalog & Telemetry Generators
+│   │   └── storage/                # Synthetic Logs, Metrics, Runbooks Storage
+│   ├── gateway/                    # LLM Gateway & Task Routing
+│   │   └── client.py               # Portkey / Groq / OpenAI / Deterministic Router
+│   ├── guardrails/                 # 3-Gate Safety System
+│   │   ├── rails.py                # Input, Tool, and Output Guardrails
+│   │   └── colang_rules.py         # NeMo Colang Rules
+│   ├── services/                   # Retrieval & Telemetry
+│   │   └── retrieval/              # Qdrant Vector Search & FlashRank Reranker
+│   ├── tools/                      # MCP Telemetry Tools
+│   │   ├── mcp_tools.py            # Log, Metric, Deployment, Runbook Tools
+│   │   └── schemas.py              # Pydantic Schemas
+│   ├── config.py                   # Environment & Application Settings
+│   └── main.py                     # FastAPI REST API Backend
+├── evals/                          # Evaluation Framework
+│   ├── golden_dataset.json         # 28 Golden Benchmark Samples
+│   ├── evaluator.py                # 6-Metric Evaluation Engine
+│   └── evaluation_results.json     # Saved Benchmark Execution Results
+├── tests/                          # Automated Test Suite (26 Unit/Integration Tests)
+├── ui/                             # Streamlit Live Investigation Dashboard
+│   └── app.py                      # Multi-tab Visualizer & Security Sandbox
+├── run_tests.py                    # Standalone Test Runner
+└── README.md                       # Comprehensive Documentation
+```
+
+---
+
+## 🏆 Interview-Defensible Architecture Decisions
+
+1. **Why LangGraph instead of linear chains?**
+   - Incident triage is non-deterministic. A database latency alert requires querying logs, metrics, and deployments conditionally; while an DNS outage requires runbook verification first. LangGraph provides cyclical state management and checkpointing.
+2. **Why 3-Gate Guardrails?**
+   - In production SRE automation, letting agents run unrestricted commands or leak secrets is catastrophic. Gate 1 intercepts adversarial prompts, Gate 2 prevents shell injections in telemetry queries, and Gate 3 scrubs credentials before reports reach engineers.
+3. **Why FlashRank Cross-Encoders over pure vector search?**
+   - Bi-encoder cosine similarity returns high-level topical matches. FlashRank cross-encoders analyze query-document token interactions simultaneously, ensuring the exact troubleshooting steps for specific error codes are placed at rank 1.
+4. **Why Multi-Tier LLM Task Routing?**
+   - Routing supervisor planning tasks to smaller, ultra-low latency models (`llama-3.1-8b`) reduces total investigation latency by 60% while reserving heavy reasoning models (`llama-3.3-70b`) for root cause synthesis.

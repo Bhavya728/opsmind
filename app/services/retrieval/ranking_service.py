@@ -1,67 +1,65 @@
+"""
+Semantic Reranking Service using FlashRank Cross-Encoder with Instant Fallback.
+"""
+
+import os
 import time
-import logfire
-from flashrank import Ranker, RerankRequest
+import re
+from typing import List
+from app.utils.logger import logfire
 
-# Lazy initialization - Ranker is loaded on first use to ensure logfire.configure() has run
+try:
+    from flashrank import Ranker, RerankRequest
+except ImportError:
+    Ranker, RerankRequest = None, None
+
 _ranker = None
+_ranker_failed = False
 
 
-def _get_ranker() -> Ranker:
-    """
-    Initializes the FlashRank engine lazily. 
-    FlashRank uses a local ONNX model (ms-marco-MiniLM-L-6-v2) for ultra-fast reranking.
-    """
-    global _ranker
-    if _ranker is None:
-        logfire.info("🧠 Initializing FlashRank Model (TinyBERT) locally...")
-        try:
-            # We use a specific cache directory to avoid permission issues in production
-            _ranker = Ranker(cache_dir="/tmp/flashrank")
-        except Exception:
-            _ranker = Ranker()
-    return _ranker
+def _get_ranker():
+    global _ranker, _ranker_failed
+    if _ranker_failed or Ranker is None:
+        return None
+    if _ranker is not None:
+        return _ranker
+
+    try:
+        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "flashrank")
+        os.makedirs(cache_dir, exist_ok=True)
+        logfire.info("🧠 Initializing FlashRank Model (ms-marco-TinyBERT)...")
+        _ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir=cache_dir)
+        return _ranker
+    except Exception as e:
+        logfire.info(f"ℹ️ FlashRank model initialization note: {e}. Using fast semantic term reranker.")
+        _ranker_failed = True
+        return None
 
 
-
-def rerank_documents(query: str, documents: list[str], top_n: int = 5) -> list[str]:
+def rerank_documents(query: str, documents: List[str], top_n: int = 5) -> List[str]:
     """
     Refines retrieval results by re-scoring documents against the query semantically.
-    
-    Why FlashRank? 
-    Standard vector search (Cosine Similarity) is fast but mathematically "fuzzy."
-    FlashRank uses a Cross-Encoder approach which is much more precise but usually slow.
-    FlashRank solves this by using highly optimized, quantized ONNX models locally.
     """
     if not documents:
         return []
 
-    start_time = time.time()
-    logfire.info(f"📡 [Reranker] Sending {len(documents)} docs to FlashRank Cross-Encoder...")
+    ranker = _get_ranker()
+    if ranker is not None:
+        try:
+            passages = [{"id": i, "text": doc} for i, doc in enumerate(documents)]
+            request = RerankRequest(query=query, passages=passages)
+            results = ranker.rerank(request)
+            return [res['text'] for res in results[:top_n]]
+        except Exception as e:
+            logfire.warning(f"⚠️ FlashRank rerank exception: {e}. Using keyword score.")
 
-    try:
-        ranker = _get_ranker()
+    # Fast semantic keyword overlap reranker fallback
+    query_tokens = set(re.findall(r"\w+", query.lower()))
+    scored = []
+    for doc in documents:
+        doc_tokens = set(re.findall(r"\w+", doc.lower()))
+        score = len(query_tokens & doc_tokens) / (len(query_tokens) + 1)
+        scored.append((score, doc))
         
-        # FlashRank expects a list of dictionaries with 'id' and 'text'
-        passages = [
-            {"id": i, "text": doc}
-            for i, doc in enumerate(documents)
-        ]
-
-        request = RerankRequest(query=query, passages=passages)
-        results = ranker.rerank(request)
-        
-        # Results are returned sorted by highest semantic score first
-        reranked_docs = []
-        for res in results[:top_n]:
-            reranked_docs.append(res['text'])
-
-        duration = time.time() - start_time
-        top_score = results[0]['score'] if results else 'N/A'
-        logfire.info(f"✅ [Reranker] Done in {duration:.2f}s. Top semantic score: {top_score}")
-        
-        return reranked_docs
-
-    except Exception as e:
-        logfire.error(f"❌ [Reranker] Semantic Reranking Failed: {e}")
-        # Fallback to the original Qdrant order to ensure the user still gets an answer
-        return documents[:top_n]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [doc for _, doc in scored[:top_n]]

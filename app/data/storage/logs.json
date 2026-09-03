@@ -1,0 +1,406 @@
+[
+  {
+    "timestamp": "2026-03-01T14:15:02Z",
+    "level": "INFO",
+    "service": "order-service",
+    "trace_id": "tr-101a",
+    "message": "Deploying release v2.4.1 - image hash: sha256:7f3b89"
+  },
+  {
+    "timestamp": "2026-03-01T14:16:10Z",
+    "level": "WARN",
+    "service": "order-service",
+    "trace_id": "tr-101b",
+    "message": "DB connection pool utilization at 100% (5/5 connections active). Connection wait queue: 84 requests."
+  },
+  {
+    "timestamp": "2026-03-01T14:16:45Z",
+    "level": "ERROR",
+    "service": "order-service",
+    "trace_id": "tr-101c",
+    "message": "HikariPool-1 - Connection is not available, request timed out after 30000ms. Active: 5, Idle: 0, Waiting: 142",
+    "stack_trace": "com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:182)\n\tat com.enterprise.orders.repository.OrderRepository.save(OrderRepository.java:45)"
+  },
+  {
+    "timestamp": "2026-03-01T14:17:30Z",
+    "level": "ERROR",
+    "service": "order-service",
+    "trace_id": "tr-101d",
+    "message": "HTTP POST /api/v1/orders failed with status 504 Gateway Timeout - downstream DB query blocked"
+  },
+  {
+    "timestamp": "2026-03-02T09:10:15Z",
+    "level": "WARN",
+    "service": "payment-service",
+    "trace_id": "tr-102a",
+    "message": "Database client pool: 490/500 connections active"
+  },
+  {
+    "timestamp": "2026-03-02T09:11:00Z",
+    "level": "FATAL",
+    "service": "payment-service",
+    "trace_id": "tr-102b",
+    "message": "org.postgresql.util.PSQLException: FATAL: remaining connection slots are reserved for non-replication superuser connections",
+    "stack_trace": "org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:319)"
+  },
+  {
+    "timestamp": "2026-03-02T09:11:22Z",
+    "level": "ERROR",
+    "service": "payment-service",
+    "trace_id": "tr-102c",
+    "message": "Query 'SELECT * FROM payment_audit_logs WHERE merchant_id = ? AND status = ?' duration 84200ms in state idle in transaction (pid 18291)"
+  },
+  {
+    "timestamp": "2026-03-02T11:00:00Z",
+    "level": "INFO",
+    "service": "auth-service",
+    "trace_id": "tr-103a",
+    "message": "Pod auth-service-78bfd86-kx2l9 started"
+  },
+  {
+    "timestamp": "2026-03-02T11:35:10Z",
+    "level": "WARN",
+    "service": "auth-service",
+    "trace_id": "tr-103b",
+    "message": "JVM Heap memory reached 92% (471MB / 512MB). SessionRevocationStore contains 1,842,000 entries."
+  },
+  {
+    "timestamp": "2026-03-02T11:42:01Z",
+    "level": "FATAL",
+    "service": "auth-service",
+    "trace_id": "tr-103c",
+    "message": "Kubelet cgroup event: Pod auth-service-78bfd86-kx2l9 exceeded memory limit (512Mi). Terminated with exit code 137 (OOMKilled)",
+    "stack_trace": "java.lang.OutOfMemoryError: Java heap space\n\tat java.base/java.util.concurrent.ConcurrentHashMap.putVal(ConcurrentHashMap.java:1011)"
+  },
+  {
+    "timestamp": "2026-03-03T02:00:05Z",
+    "level": "INFO",
+    "service": "auth-service",
+    "trace_id": "tr-104a",
+    "message": "Triggering periodic JWKS public key rotation"
+  },
+  {
+    "timestamp": "2026-03-03T02:00:15Z",
+    "level": "ERROR",
+    "service": "auth-service",
+    "trace_id": "tr-104b",
+    "message": "Failed to parse RSA public key from secret manager payload: java.security.spec.InvalidKeySpecException: encoded key spec not recognized",
+    "stack_trace": "java.security.KeyFactory.generatePublic(KeyFactory.java:352)\n\tat com.enterprise.auth.jwt.KeyProvider.loadPublicKey(KeyProvider.java:62)"
+  },
+  {
+    "timestamp": "2026-03-03T02:00:30Z",
+    "level": "ERROR",
+    "service": "auth-service",
+    "trace_id": "tr-104c",
+    "message": "HTTP POST /api/v1/auth/verify failed with 500: KeyProviderException"
+  },
+  {
+    "timestamp": "2026-03-03T08:14:00Z",
+    "level": "WARN",
+    "service": "inventory-service",
+    "trace_id": "tr-105a",
+    "message": "Redis memory usage: 15.9GB / 16.0GB (99.3%)"
+  },
+  {
+    "timestamp": "2026-03-03T08:15:20Z",
+    "level": "ERROR",
+    "service": "inventory-service",
+    "trace_id": "tr-105b",
+    "message": "redis.exceptions.ResponseError: OOM command not allowed when used memory > 'maxmemory' policy 'noeviction'",
+    "stack_trace": "redis.client.execute_command(client.py:902)\n\tat app.cache.set_inventory(cache.py:78)"
+  },
+  {
+    "timestamp": "2026-03-03T08:16:00Z",
+    "level": "WARN",
+    "service": "inventory-service",
+    "trace_id": "tr-105c",
+    "message": "Bypassing cache due to Redis write errors; degrading to direct PostgreSQL reads"
+  },
+  {
+    "timestamp": "2026-03-03T16:20:00Z",
+    "level": "WARN",
+    "service": "payment-service",
+    "trace_id": "tr-106a",
+    "message": "External payment API response time exceeding 20000ms for gateway https://api.mockstripe.internal"
+  },
+  {
+    "timestamp": "2026-03-03T16:21:30Z",
+    "level": "ERROR",
+    "service": "payment-service",
+    "trace_id": "tr-106b",
+    "message": "ThreadPoolExecutor saturated: 200 active threads, queue length 1024 (capacity reached)",
+    "stack_trace": "java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1367)"
+  },
+  {
+    "timestamp": "2026-03-03T16:22:15Z",
+    "level": "ERROR",
+    "service": "payment-service",
+    "trace_id": "tr-106c",
+    "message": "RejectedExecutionException on POST /api/v1/payments/charge"
+  },
+  {
+    "timestamp": "2026-03-04T04:00:10Z",
+    "level": "INFO",
+    "service": "analytics-service",
+    "trace_id": "tr-107a",
+    "message": "Starting hourly rollup cronjob"
+  },
+  {
+    "timestamp": "2026-03-04T04:01:20Z",
+    "level": "WARN",
+    "service": "analytics-service",
+    "trace_id": "tr-107b",
+    "message": "Slow query alert: Seq Scan on event_stream (cost=0.00..892401.50 rows=45120890) duration: 184s"
+  },
+  {
+    "timestamp": "2026-03-04T04:03:00Z",
+    "level": "ERROR",
+    "service": "analytics-service",
+    "trace_id": "tr-107c",
+    "message": "Database query timed out after 300000ms on table event_stream"
+  },
+  {
+    "timestamp": "2026-03-04T10:15:00Z",
+    "level": "INFO",
+    "service": "notification-service",
+    "trace_id": "tr-108a",
+    "message": "Starting notification-service v2.1.0"
+  },
+  {
+    "timestamp": "2026-03-04T10:15:05Z",
+    "level": "FATAL",
+    "service": "notification-service",
+    "trace_id": "tr-108b",
+    "message": "org.apache.kafka.common.config.ConfigException: No resolvable bootstrap urls given in bootstrap.servers: [kafka-clstr-prod.internal.corp:9092]",
+    "stack_trace": "org.apache.kafka.clients.ClientUtils.parseAndValidateAddresses(ClientUtils.java:93)"
+  },
+  {
+    "timestamp": "2026-03-04T10:15:10Z",
+    "level": "FATAL",
+    "service": "notification-service",
+    "trace_id": "tr-108c",
+    "message": "Application context initialization failed; exiting with code 1"
+  },
+  {
+    "timestamp": "2026-03-04T14:30:00Z",
+    "level": "WARN",
+    "service": "api-gateway",
+    "trace_id": "tr-109a",
+    "message": "CircuitBreaker 'user-service-cb' state transition from CLOSED to OPEN (failure rate: 60% > threshold: 50%)"
+  },
+  {
+    "timestamp": "2026-03-04T14:35:00Z",
+    "level": "ERROR",
+    "service": "api-gateway",
+    "trace_id": "tr-109b",
+    "message": "CircuitBreaker 'user-service-cb' is OPEN and does not permit further calls",
+    "stack_trace": "io.github.resilience4j.circuitbreaker.CallNotPermittedException: CircuitBreaker 'user-service-cb' is OPEN"
+  },
+  {
+    "timestamp": "2026-03-04T14:36:00Z",
+    "level": "INFO",
+    "service": "user-service",
+    "trace_id": "tr-109c",
+    "message": "Healthcheck endpoint /health returning 200 OK (CPU: 12%, Memory: 21%)"
+  },
+  {
+    "timestamp": "2026-03-05T00:00:02Z",
+    "level": "ERROR",
+    "service": "api-gateway",
+    "trace_id": "tr-110a",
+    "message": "javax.net.ssl.SSLHandshakeException: PKIX path validation failed: java.security.cert.CertificateExpiredException: NotAfter: Wed Mar 04 23:59:59 UTC 2026",
+    "stack_trace": "sun.security.ssl.Alert.createSSLException(Alert.java:131)\n\tat sun.security.ssl.TransportContext.fatal(TransportContext.java:371)"
+  },
+  {
+    "timestamp": "2026-03-05T00:00:10Z",
+    "level": "ERROR",
+    "service": "order-service",
+    "trace_id": "tr-110b",
+    "message": "mTLS handshake failed with upstream api-gateway"
+  },
+  {
+    "timestamp": "2026-03-05T12:00:15Z",
+    "level": "ERROR",
+    "service": "order-service",
+    "trace_id": "tr-111a",
+    "message": "org.postgresql.util.PSQLException: ERROR: deadlock detected\nDetail: Process 4129 waits for ShareLock on transaction 8812; blocked by process 4130.\nProcess 4130 waits for ExclusiveLock on tuple (42, 18) of relation inventory; blocked by process 4129.",
+    "stack_trace": "org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2553)"
+  },
+  {
+    "timestamp": "2026-03-05T12:00:20Z",
+    "level": "WARN",
+    "service": "order-service",
+    "trace_id": "tr-111b",
+    "message": "Transaction rolled back for checkout session cs_99218 due to database deadlock"
+  },
+  {
+    "timestamp": "2026-03-05T15:00:10Z",
+    "level": "WARN",
+    "service": "api-gateway",
+    "trace_id": "tr-112a",
+    "message": "Rate limit exceeded for client key 172.68.22.1: current count 145 > limit 10/sec"
+  },
+  {
+    "timestamp": "2026-03-05T15:00:15Z",
+    "level": "WARN",
+    "service": "api-gateway",
+    "trace_id": "tr-112b",
+    "message": "Notice: 172.68.22.1 matches Cloudflare edge ingress subnet. Rate limiting proxy IP globally!"
+  },
+  {
+    "timestamp": "2026-03-06T03:10:00Z",
+    "level": "WARN",
+    "service": "analytics-service",
+    "trace_id": "tr-113a",
+    "message": "org.apache.kafka.clients.consumer.CommitFailedException: Commit cannot be completed since the group has already rebalanced and assigned the partitions to another member. This means that the time between subsequent calls to poll() was longer than the configured max.poll.interval.ms."
+  },
+  {
+    "timestamp": "2026-03-06T03:10:30Z",
+    "level": "INFO",
+    "service": "analytics-service",
+    "trace_id": "tr-113b",
+    "message": "Attempting to join group analytics-consumer-group generation 42"
+  },
+  {
+    "timestamp": "2026-03-06T07:45:00Z",
+    "level": "FATAL",
+    "service": "user-service",
+    "trace_id": "tr-114a",
+    "message": "PANIC: could not write to file 'pg_wal/000000010000012A0000009F': No space left on device"
+  },
+  {
+    "timestamp": "2026-03-06T07:45:10Z",
+    "level": "ERROR",
+    "service": "user-service",
+    "trace_id": "tr-114b",
+    "message": "Database server failed to write WAL record, transitioning to read-only safe mode"
+  },
+  {
+    "timestamp": "2026-03-06T11:20:00Z",
+    "level": "WARN",
+    "service": "user-service",
+    "trace_id": "tr-115a",
+    "message": "dial tcp: lookup auth-service.default.svc.cluster.local on 10.96.0.10:53: read udp 10.244.2.14:48123->10.96.0.10:53: i/o timeout"
+  },
+  {
+    "timestamp": "2026-03-06T11:21:00Z",
+    "level": "ERROR",
+    "service": "user-service",
+    "trace_id": "tr-115b",
+    "message": "Failed to resolve downstream service hostname after 3 retries"
+  },
+  {
+    "timestamp": "2026-03-06T14:00:10Z",
+    "level": "WARN",
+    "service": "user-service",
+    "trace_id": "tr-116a",
+    "message": "org.apache.cassandra.exceptions.ReadFailureException: Scanned over 100001 tombstones in user_profiles.users_by_id; query aborted (threshold: 100000)",
+    "stack_trace": "org.apache.cassandra.db.filter.TombstoneOverwhelmingException"
+  },
+  {
+    "timestamp": "2026-03-06T18:30:00Z",
+    "level": "ERROR",
+    "service": "analytics-service",
+    "trace_id": "tr-117a",
+    "message": "com.amazonaws.services.s3.model.AmazonS3Exception: SlowDown (Service: Amazon S3; Status Code: 429; Error Code: SlowDown; Request ID: K8X294)"
+  },
+  {
+    "timestamp": "2026-03-07T01:00:00Z",
+    "level": "WARN",
+    "service": "notification-service",
+    "trace_id": "tr-118a",
+    "message": "=WARNING REPORT==== memory resource limit alarm set on node rabbit@rabbit-node-1. Blocking publishes"
+  },
+  {
+    "timestamp": "2026-03-07T01:00:15Z",
+    "level": "ERROR",
+    "service": "notification-service",
+    "trace_id": "tr-118b",
+    "message": "Channel exception: connection closed by peer due to publisher flow control alarm"
+  },
+  {
+    "timestamp": "2026-03-07T06:00:00Z",
+    "level": "WARN",
+    "service": "inventory-service",
+    "trace_id": "tr-119a",
+    "message": "Runtime diagnostic: Active goroutines count = 148,290 (normal baseline: ~400)"
+  },
+  {
+    "timestamp": "2026-03-07T06:05:00Z",
+    "level": "WARN",
+    "service": "inventory-service",
+    "trace_id": "tr-119b",
+    "message": "Goroutine leak detected in listener: app/poller.go:42 (blocked on chan receive)"
+  },
+  {
+    "timestamp": "2026-03-07T09:30:00Z",
+    "level": "FATAL",
+    "service": "analytics-service",
+    "trace_id": "tr-120a",
+    "message": "ClusterHealth [status: RED, unassigned_shards: 12, active_primary_shards_pct: 78.4%]"
+  },
+  {
+    "timestamp": "2026-03-07T09:30:10Z",
+    "level": "ERROR",
+    "service": "analytics-service",
+    "trace_id": "tr-120b",
+    "message": "ElasticsearchStatusException[Unable to execute search: all shards failed]"
+  },
+  {
+    "timestamp": "2026-03-07T12:10:00Z",
+    "level": "WARN",
+    "service": "payment-service",
+    "trace_id": "tr-121a",
+    "message": "Postgres streaming replication: WAL sender process network write timeout to standby replica 10.0.2.45"
+  },
+  {
+    "timestamp": "2026-03-07T12:15:00Z",
+    "level": "ERROR",
+    "service": "payment-service",
+    "trace_id": "tr-121b",
+    "message": "Replication delay alert: replica-az-b lag is 14280s (> threshold 30s)"
+  },
+  {
+    "timestamp": "2026-03-07T16:00:05Z",
+    "level": "FATAL",
+    "service": "user-service",
+    "trace_id": "tr-122a",
+    "message": "java.lang.NoSuchMethodError: 'com.fasterxml.jackson.core.util.JacksonFeatureSet com.fasterxml.jackson.databind.ObjectMapper.getRegisteredModuleTypes()'",
+    "stack_trace": "com.fasterxml.jackson.databind.ObjectMapper.write(ObjectMapper.java:1240)\n\tat com.enterprise.users.controller.UserController.getUser(UserController.java:82)"
+  },
+  {
+    "timestamp": "2026-03-07T20:00:10Z",
+    "level": "FATAL",
+    "service": "order-service",
+    "trace_id": "tr-123a",
+    "message": "com.amazonaws.services.secretsmanager.model.AWSSecretsManagerException: User: arn:aws:sts::123456789012:assumed-role/order-service-sa is not authorized to perform: secretsmanager:GetSecretValue on resource: db-credentials (Service: AWSSecretsManager; Status Code: 400; Error Code: AccessDeniedException)"
+  },
+  {
+    "timestamp": "2026-03-08T02:15:00Z",
+    "level": "FATAL",
+    "service": "api-gateway",
+    "trace_id": "tr-124a",
+    "message": "kernel: [18294.12] nginx[14210]: segfault at 7fff9028 ip 00007f9202 sp 00007fff error 4 in nginx[5567a+140000]"
+  },
+  {
+    "timestamp": "2026-03-08T02:15:05Z",
+    "level": "ERROR",
+    "service": "api-gateway",
+    "trace_id": "tr-124b",
+    "message": "upstream prematurely closed connection while reading response header from upstream"
+  },
+  {
+    "timestamp": "2026-03-08T08:00:00Z",
+    "level": "FATAL",
+    "service": "payment-service",
+    "trace_id": "tr-125a",
+    "message": "FATAL: database is not accepting commands to avoid wraparound data loss in database 'payment_db'\nHINT: Stop the postmaster and vacuum that database in single-user mode."
+  },
+  {
+    "timestamp": "2026-03-08T08:00:05Z",
+    "level": "ERROR",
+    "service": "payment-service",
+    "trace_id": "tr-125b",
+    "message": "All database write operations halted by server protection mechanism"
+  }
+]

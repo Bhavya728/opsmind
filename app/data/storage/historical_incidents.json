@@ -1,0 +1,34 @@
+[
+  {
+    "incident_id": "POSTMORTEM-2025-084",
+    "title": "Order Service Outage from HikariCP Pool Misconfiguration",
+    "service": "order-service",
+    "root_cause": "A PR inadvertently lowered the DB connection pool size from 50 to 5 in production Helm values, causing immediate connection timeouts during peak traffic.",
+    "resolution": "Rolled back Helm release and added automated configuration linter in CI to enforce minimum pool sizing standards.",
+    "lessons_learned": "Never allow manual pool downsizing without load testing validation."
+  },
+  {
+    "incident_id": "POSTMORTEM-2025-091",
+    "title": "Payment Service Downtime Due to Stuck Unindexed Query",
+    "service": "payment-service",
+    "root_cause": "An unindexed audit logging query performed a sequential table scan, exhausting all 500 database connection slots in idle-in-transaction status.",
+    "resolution": "Terminated idle connections, created composite index on payment_audit_logs(created_at, merchant_id), and set 15s session timeout.",
+    "lessons_learned": "All new queries touching tables >1M rows must include EXPLAIN ANALYZE verification in code review."
+  },
+  {
+    "incident_id": "POSTMORTEM-2025-102",
+    "title": "Auth Service CrashLoop from Token Revocation Memory Leak",
+    "service": "auth-service",
+    "root_cause": "In-memory revocation map did not implement TTL expiration, resulting in heap exhaustion and Kubelet OOMKill (ExitCode 137).",
+    "resolution": "Replaced unbounded map with Guava Cache with 100k max items and 1-hour expiration.",
+    "lessons_learned": "All in-memory caches must be bounded and explicitly specify an eviction policy."
+  },
+  {
+    "incident_id": "POSTMORTEM-2025-115",
+    "title": "Redis Eviction Storm During Black Friday Sale",
+    "service": "inventory-service",
+    "root_cause": "Redis maxmemory-policy was set to noeviction, rejecting all write operations once memory reached 16GB.",
+    "resolution": "Changed policy to volatile-lru on live cluster and updated Terraform IaC definitions.",
+    "lessons_learned": "Default cache policy for Redis must always be LRU/LFU eviction."
+  }
+]

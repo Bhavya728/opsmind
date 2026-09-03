@@ -1,0 +1,178 @@
+[
+  {
+    "id": "RB-ORD-01",
+    "service": "order-service",
+    "title": "Order Service Latency & Database Pool Exhaustion",
+    "alert_trigger": "p99_latency > 2000ms OR connection_wait_time > 5000ms",
+    "symptoms": [
+      "HikariPool connection timeout",
+      "HTTP 504 Gateway Timeout on /api/v1/orders",
+      "High connection wait queue"
+    ],
+    "investigation_steps": [
+      "Check recent order-service deployment configs for changes in `max_connections` or `maximumPoolSize`",
+      "Query active connection count in PostgreSQL pg_stat_activity",
+      "Inspect slow query log for locks on orders / order_items tables"
+    ],
+    "mitigation_steps": [
+      "Roll back to previous stable order-service deployment if pool configuration was reduced",
+      "Increase max pool size in Helm values configmap to 50",
+      "Restart order-service pods to reinitialize connection pool"
+    ],
+    "escalation_path": "Escalate to Order Domain Lead & DBA on-call"
+  },
+  {
+    "id": "RB-DB-01",
+    "service": "database",
+    "title": "Relational Database CPU Saturation & Query Optimization",
+    "alert_trigger": "db_cpu_utilization > 85% for > 5 minutes",
+    "symptoms": [
+      "High CPU usage on primary DB node",
+      "Slow query warnings with Sequential Scan",
+      "Stalling dashboard/analytics reads"
+    ],
+    "investigation_steps": [
+      "Run `SELECT pid, query, state, age(clock_timestamp(), query_start) FROM pg_stat_activity WHERE state != 'idle' ORDER BY age DESC LIMIT 5;`",
+      "Run EXPLAIN ANALYZE on longest running queries to check for missing indexes",
+      "Identify calling microservice from query comments or connection application_name"
+    ],
+    "mitigation_steps": [
+      "Terminate long-running unindexed query using `SELECT pg_cancel_backend(pid);`",
+      "Create missing index concurrently: `CREATE INDEX CONCURRENTLY ...`",
+      "Set user-level statement_timeout to 10000ms"
+    ],
+    "escalation_path": "Escalate to Database Reliability Engineering (DBRE)"
+  },
+  {
+    "id": "RB-DB-02",
+    "service": "payment-service",
+    "title": "PostgreSQL Connection Exhaustion & Transaction Leaks",
+    "alert_trigger": "active_db_connections >= 90% of max_connections",
+    "symptoms": [
+      "FATAL: remaining connection slots are reserved",
+      "High idle-in-transaction count",
+      "Payment failures"
+    ],
+    "investigation_steps": [
+      "Query `SELECT pid, state, age(clock_timestamp(), xact_start) FROM pg_stat_activity WHERE state = 'idle in transaction';`",
+      "Inspect payment-service application traces for missing `@Transactional` boundary closure or unclosed connections",
+      "Check client connection pool leak detection logs"
+    ],
+    "mitigation_steps": [
+      "Terminate stuck idle connections via `SELECT pg_terminate_backend(pid);`",
+      "Configure `idle_in_transaction_session_timeout = '15s'` in database",
+      "Restart application instances leaking connections"
+    ],
+    "escalation_path": "Escalate to Payment Core Team & DBRE"
+  },
+  {
+    "id": "RB-AUTH-03",
+    "service": "auth-service",
+    "title": "Memory Leaks and OOMKilled Pod Crash Recovery",
+    "alert_trigger": "Pod restart with ExitCode 137 (OOMKilled) OR Memory utilization > 90%",
+    "symptoms": [
+      "Periodic pod restarts every 30-60 mins",
+      "JVM/Go heap steadily climbing",
+      "Sudden 502/504 errors on restart"
+    ],
+    "investigation_steps": [
+      "Capture heap dump / pprof memory profile before pod terminates",
+      "Check Git diff of recent releases for unbounded collections or missing cache eviction policies",
+      "Verify memory limits in Kubernetes deployment spec"
+    ],
+    "mitigation_steps": [
+      "Temporarily increase pod memory limits in deployment spec to prevent crash loop",
+      "Roll back to prior release without the memory leak",
+      "Deploy hotfix configuring bounded cache size with TTL expiration"
+    ],
+    "escalation_path": "Escalate to Auth Platform Team"
+  },
+  {
+    "id": "RB-CACHE-01",
+    "service": "inventory-service",
+    "title": "Redis Memory Saturation & Eviction Policy Triage",
+    "alert_trigger": "Redis used_memory > 95% of maxmemory",
+    "symptoms": [
+      "OOM command not allowed when used memory > 'maxmemory'",
+      "Cache hit ratio plunging",
+      "Database query volume spiking"
+    ],
+    "investigation_steps": [
+      "Check `redis-cli INFO memory` and inspect `maxmemory_policy`",
+      "Run `redis-cli --bigkeys` or `redis-cli MEMORY USAGE <key>` to find memory hog keys",
+      "Check if background sync job wrote keys without TTL"
+    ],
+    "mitigation_steps": [
+      "Change eviction policy online: `CONFIG SET maxmemory-policy allkeys-lru`",
+      "Flush temporary non-critical keyspaces if safe",
+      "Scale Redis cluster memory allocation"
+    ],
+    "escalation_path": "Escalate to Cache & Infrastructure Team"
+  },
+  {
+    "id": "RB-KAFKA-01",
+    "service": "notification-service",
+    "title": "Kafka Producer Connection & Configuration Troubleshooting",
+    "alert_trigger": "Pod CrashLoopBackOff with ConfigException / UnknownHostException",
+    "symptoms": [
+      "No resolvable bootstrap urls",
+      "Notification pod restarts",
+      "Queue backlog accumulation"
+    ],
+    "investigation_steps": [
+      "Inspect environment variables and ConfigMap for notification-service",
+      "Verify DNS resolution of Kafka bootstrap broker address from inside the pod using nslookup / nc",
+      "Review recent Helm/Kustomize deployment commits"
+    ],
+    "mitigation_steps": [
+      "Correct misspelled hostname in ConfigMap / Helm values",
+      "Rollback release to last known working revision",
+      "Verify pod status reaches 1/1 Running"
+    ],
+    "escalation_path": "Escalate to Messaging Platform on-call"
+  },
+  {
+    "id": "RB-GW-01",
+    "service": "api-gateway",
+    "title": "API Gateway Circuit Breakers & Ingress Routing",
+    "alert_trigger": "Gateway 503 error rate > 5% while upstream service reports 200 OK",
+    "symptoms": [
+      "CircuitBreaker is OPEN and does not permit further calls",
+      "Downstream service metrics healthy",
+      "Traffic dropped at gateway"
+    ],
+    "investigation_steps": [
+      "Check gateway circuit breaker status dashboard / admin metrics endpoint",
+      "Inspect half-open probe and waitDuration configuration settings",
+      "Check if a transient network glitch previously tripped the threshold"
+    ],
+    "mitigation_steps": [
+      "Issue manual circuit breaker reset command via admin API",
+      "Fix circuit breaker configuration to allow proper half-open self-healing transitions",
+      "Reload gateway configuration without dropping active connections"
+    ],
+    "escalation_path": "Escalate to API Platform Team"
+  },
+  {
+    "id": "RB-SEC-01",
+    "service": "api-gateway",
+    "title": "SSL/TLS Certificate Expiration & Renewal Troubleshooting",
+    "alert_trigger": "CertificateExpiredException OR days_until_cert_expiry <= 0",
+    "symptoms": [
+      "SSLHandshakeException across all mTLS requests",
+      "Complete traffic cessation",
+      "PKIX path validation failed"
+    ],
+    "investigation_steps": [
+      "Check cert-manager certificate resource status: `kubectl describe certificate`",
+      "Check cert-manager controller logs for renewal webhook authentication errors",
+      "Verify expiration date with `openssl s_client -connect ...`"
+    ],
+    "mitigation_steps": [
+      "Force manual certificate renewal via cert-manager CLI or Secret update",
+      "Rollout restart ingress controller and sidecar proxies to load new cert",
+      "Fix webhook authentication token in Secret Manager"
+    ],
+    "escalation_path": "Escalate to Security Operations & PKI Lead"
+  }
+]
