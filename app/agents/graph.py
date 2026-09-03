@@ -1,157 +1,136 @@
 """
-LangGraph Multi-Agent Incident Investigation Workflow.
+LangGraph Multi-Agent Orchestration Graph for OpsMind Research & Knowledge System.
 
-Orchestration Architecture:
-- Entry: Supervisor / Planner Node (determines target service & investigation paths)
-- Parallel/Conditional Investigation Nodes:
-  * Log Investigation Agent (get_service_logs MCP tool)
-  * Metrics Investigation Agent (get_service_metrics MCP tool)
-  * Deployment Investigation Agent (get_deployment_history MCP tool)
-  * Knowledge / RAG Agent (search_runbook & Qdrant semantic search)
-- Correlation & Synthesis: Root Cause Analysis (RCA) Agent
-- Final Output: Responder Agent (formats structured response & output guardrails)
+Workflow:
+1. Input Guardrail Verification
+2. Query Planner (Deconstruction & Routing)
+3. Web Research Agent (External Search)
+4. Knowledge / RAG Agent (ChromaDB Dense Retrieval)
+5. Evidence / Critic Agent (Groundedness & Citation Verification)
+6. Report Generation Agent (Structured Synthesis)
+7. Output Guardrail Redaction
 """
 
-import os
-from typing import Dict, Any, List
+from typing import Dict, Any, Optional
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
-from app.agents.state import IncidentState
-from app.agents.nodes.supervisor_node import supervisor_planner_node
-from app.agents.nodes.log_agent_node import log_investigation_node
-from app.agents.nodes.metrics_agent_node import metrics_investigation_node
-from app.agents.nodes.deployment_agent_node import deployment_agent_node
-from app.agents.nodes.knowledge_agent_node import knowledge_rag_node
-from app.agents.nodes.rca_agent_node import root_cause_analysis_node
-from app.agents.nodes.responder_node import responder_node
+from app.agents.state import ResearchState
+from app.agents.nodes.query_planner import query_planner_node
+from app.agents.nodes.web_research_agent import web_research_node
+from app.agents.nodes.rag_knowledge_agent import rag_knowledge_node
+from app.agents.nodes.evidence_critic_agent import evidence_critic_node
+from app.agents.nodes.report_generator_agent import report_generator_node
+from app.guardrails.rails import guard_input, guard_output
 from app.utils.logger import logfire
 
 
-# --- Define LangGraph StateGraph ---
-builder = StateGraph(IncidentState)
-
-# Add all agent nodes
-builder.add_node("supervisor", supervisor_planner_node)
-builder.add_node("log_agent", log_investigation_node)
-builder.add_node("metrics_agent", metrics_investigation_node)
-builder.add_node("deployment_agent", deployment_agent_node)
-builder.add_node("knowledge_agent", knowledge_rag_node)
-builder.add_node("rca_agent", root_cause_analysis_node)
-builder.add_node("responder", responder_node)
-
-# Set entry point
-builder.set_entry_point("supervisor")
-
-# Routing logic from supervisor
-def route_after_supervisor(state: IncidentState) -> str:
-    paths = state.get("investigation_paths", [])
-    if "logs" in paths:
-        return "log_agent"
-    elif "metrics" in paths:
-        return "metrics_agent"
-    elif "deployments" in paths:
-        return "deployment_agent"
-    elif "knowledge" in paths:
-        return "knowledge_agent"
-    return "rca_agent"
+def create_research_graph():
+    """Build and compile the LangGraph 5-Agent Research Workflow."""
+    workflow = StateGraph(ResearchState)
+    
+    # Register agent nodes
+    workflow.add_node("query_planner", query_planner_node)
+    workflow.add_node("web_research", web_research_node)
+    workflow.add_node("rag_knowledge", rag_knowledge_node)
+    workflow.add_node("evidence_critic", evidence_critic_node)
+    workflow.add_node("report_generator", report_generator_node)
+    
+    # Define linear execution topology with internal conditional checks
+    workflow.set_entry_point("query_planner")
+    workflow.add_edge("query_planner", "web_research")
+    workflow.add_edge("web_research", "rag_knowledge")
+    workflow.add_edge("rag_knowledge", "evidence_critic")
+    workflow.add_edge("evidence_critic", "report_generator")
+    workflow.add_edge("report_generator", END)
+    
+    return workflow.compile()
 
 
-def route_after_logs(state: IncidentState) -> str:
-    paths = state.get("investigation_paths", [])
-    if "metrics" in paths:
-        return "metrics_agent"
-    elif "deployments" in paths:
-        return "deployment_agent"
-    elif "knowledge" in paths:
-        return "knowledge_agent"
-    return "rca_agent"
+# Global compiled graph instance
+research_graph = create_research_graph()
 
 
-def route_after_metrics(state: IncidentState) -> str:
-    paths = state.get("investigation_paths", [])
-    if "deployments" in paths:
-        return "deployment_agent"
-    elif "knowledge" in paths:
-        return "knowledge_agent"
-    return "rca_agent"
+def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Primary orchestration entry point for researching a query.
+    Enforces Input Guardrails -> Multi-Agent LangGraph -> Output Guardrails.
+    """
+    # 1. Gate 1: Input Guardrail Check
+    is_blocked, block_reason = guard_input(query)
+    if is_blocked:
+        logfire.warning(f"🛡️ Query blocked at input guardrail: {block_reason}")
+        return {
+            "query": query,
+            "answer": block_reason,
+            "sources": [],
+            "agents_used": ["Input Guardrail Gate"],
+            "tools_used": [],
+            "confidence": 0.0,
+            "plan": ["Input Safety Evaluation: Blocked"],
+            "guardrail_blocked": True,
+            "guardrail_response": block_reason
+        }
 
-
-def route_after_deployments(state: IncidentState) -> str:
-    paths = state.get("investigation_paths", [])
-    if "knowledge" in paths:
-        return "knowledge_agent"
-    return "rca_agent"
-
-
-builder.add_conditional_edges(
-    "supervisor",
-    route_after_supervisor,
-    {
-        "log_agent": "log_agent",
-        "metrics_agent": "metrics_agent",
-        "deployment_agent": "deployment_agent",
-        "knowledge_agent": "knowledge_agent",
-        "rca_agent": "rca_agent"
+    # 2. Initialize State
+    initial_state: ResearchState = {
+        "query": query,
+        "thread_id": thread_id,
+        "plan": [],
+        "need_rag": True,
+        "need_web": True,
+        "search_queries": [],
+        "focus_areas": [],
+        "current_step": "Starting research",
+        "status": "in_progress",
+        "rag_findings": [],
+        "web_findings": [],
+        "observed_evidence": [],
+        "verified_sources": [],
+        "critic_score": 0.0,
+        "confidence": 0.0,
+        "critic_notes": "",
+        "report": "",
+        "agents_used": [],
+        "tools_used": [],
+        "guardrail_blocked": False,
+        "guardrail_response": None,
+        "messages": [{"role": "user", "content": query}],
+        "final_output": {}
     }
-)
 
-builder.add_conditional_edges(
-    "log_agent",
-    route_after_logs,
-    {
-        "metrics_agent": "metrics_agent",
-        "deployment_agent": "deployment_agent",
-        "knowledge_agent": "knowledge_agent",
-        "rca_agent": "rca_agent"
-    }
-)
-
-builder.add_conditional_edges(
-    "metrics_agent",
-    route_after_metrics,
-    {
-        "deployment_agent": "deployment_agent",
-        "knowledge_agent": "knowledge_agent",
-        "rca_agent": "rca_agent"
-    }
-)
-
-builder.add_conditional_edges(
-    "deployment_agent",
-    route_after_deployments,
-    {
-        "knowledge_agent": "knowledge_agent",
-        "rca_agent": "rca_agent"
-    }
-)
-
-builder.add_edge("knowledge_agent", "rca_agent")
-builder.add_edge("rca_agent", "responder")
-builder.add_edge("responder", END)
-
-
-# --- Build Checkpointer ---
-def _build_checkpointer():
-    local_mode = os.getenv("LOCAL_MODE", "true").lower() == "true"
-    if local_mode:
-        logfire.info("🧠 LangGraph Checkpointer: MemorySaver (LOCAL_MODE=true)")
-        return MemorySaver()
+    # 3. Execute LangGraph
     try:
-        from langgraph.checkpoint.postgres import PostgresSaver
-        from app.services.gcp.database_service import get_db_pool
-        pool = get_db_pool()
-        if pool is not None:
-            saver = PostgresSaver(pool)
-            saver.setup()
-            return saver
+        final_state = research_graph.invoke(initial_state)
+        
+        if final_state.get("final_output"):
+            output = final_state["final_output"]
+            output["guardrail_blocked"] = False
+            return output
+            
+        return {
+            "query": query,
+            "answer": final_state.get("report", "Research completed."),
+            "sources": final_state.get("verified_sources", []),
+            "agents_used": list(set(final_state.get("agents_used", []))),
+            "tools_used": list(set(final_state.get("tools_used", []))),
+            "confidence": final_state.get("confidence", 0.90),
+            "plan": final_state.get("plan", []),
+            "guardrail_blocked": False
+        }
     except Exception as e:
-        logfire.warning(f"⚠️ PostgresSaver init failed: {e}. Using MemorySaver.")
-    return MemorySaver()
+        logfire.error(f"❌ LangGraph execution failed: {e}")
+        return {
+            "query": query,
+            "answer": f"Research orchestration encountered an error: {str(e)}",
+            "sources": [],
+            "agents_used": ["Error Handler"],
+            "tools_used": [],
+            "confidence": 0.0,
+            "plan": [],
+            "guardrail_blocked": False
+        }
 
 
-checkpointer = _build_checkpointer()
-incident_agent = builder.compile(checkpointer=checkpointer)
-
-# Backward-compatibility alias
-rag_agent = incident_agent
+# Backward compatibility aliases
+investigate_incident = investigate_query
+incident_graph = research_graph

@@ -1,63 +1,52 @@
 import os
 from dotenv import load_dotenv
 
+# Disable telemetry and network calls globally
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_OPTOUT"] = "True"
+os.environ["POSTHOG_DISABLED"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 load_dotenv()
 
 
 class Settings:
-    # --- GCP Core ---
-    PROJECT_ID = os.getenv("PROJECT_ID", "dmtxpresss")
-    LOCATION = os.getenv("LOCATION", "us-central1")
-    GCP_DOC_AI_LOCATION = os.getenv("GCP_DOC_AI_LOCATION", "us")
-    GCP_DOC_AI_PROCESSOR_ID = os.getenv("GCP_DOC_AI_PROCESSOR_ID")
-    RAW_BUCKET = os.getenv("GCP_RAW_BUCKET", "dmtxpresss-rag-raw")
-    PROCESSED_BUCKET = os.getenv("GCP_PROCESSED_BUCKET", "dmtxpresss-rag-processed")
-
-    # --- Vector DB (Qdrant) ---
-    QDRANT_URL = os.getenv("QDRANT_CLUSTER_ENDPOINT")
-    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    QDRANT_COLLECTION = "enterprise_rag"
+    # --- Vector DB (ChromaDB) ---
+    CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "opsmind_research_kb")
+    CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chroma_db"))
 
     # --- LLM (Groq) ---
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
-    GROQ_MODEL = "llama-3.3-70b-versatile"
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
 
     # --- LLM Gateway (Portkey) ---
     PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
     PORTKEY_CONFIG_ID = os.getenv("PORTKEY_CONFIG_ID")
-    GROQ_SLUG = "rag"     # primary virtual key: @rag/llama-3.3-70b-versatile
-    GROQ_SLUG_2 = "brag"  # fallback virtual key: @brag/llama-3.1-8b-instant
+    GROQ_SLUG = os.getenv("GROQ_SLUG", "research")
+    GROQ_SLUG_2 = os.getenv("GROQ_SLUG_2", "fast")
 
-    # --- Guardrails (NVIDIA) ---
-    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+    # --- Guardrails ---
+    GUARDRAILS_ENABLED = os.getenv("GUARDRAILS_ENABLED", "true").lower() == "true"
 
-    # --- Postgres Memory ---
-    DB_HOST = os.getenv("DB_HOST")                # /cloudsql/... (Cloud Run) or hostname (local)
-    DB_USER = os.getenv("DB_USER")
-    DB_PASS = os.getenv("DB_PASS")
-    DB_NAME = os.getenv("DB_NAME", "rag_memory")
+    # --- System Mode ---
     LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
+    USE_LIVE_LLM = os.getenv("USE_LIVE_LLM", "false").lower() == "true"
 
-    # --- Redis Semantic Cache ---
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-    USE_SEMANTIC_CACHE = os.getenv("USE_SEMANTIC_CACHE", "false").lower() == "true"
-
-    # --- Observability ---
-    LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "true")
+    # --- Observability (LangSmith) ---
     LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
-    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "entreprise_rag")
+    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "opsmind_research")
     LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-
-    # --- Evals ---
-    JUDGE_GROQ = os.getenv("JUDGE_GROQ")
+    LANGSMITH_TRACING = bool(LANGSMITH_API_KEY and LANGSMITH_API_KEY.strip())
 
 
-# Apply LangSmith env vars for automatic LangChain tracing
-os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")
-os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
-os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "entreprise_rag")
-os.environ["LANGCHAIN_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+# Apply LangSmith env vars only if a valid key is provided
+if os.getenv("LANGSMITH_API_KEY"):
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
+    os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "opsmind_research")
+    os.environ["LANGCHAIN_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+else:
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 settings = Settings()

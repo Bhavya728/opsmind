@@ -1,35 +1,43 @@
 """
-LangGraph Agent State definition for the Incident Investigation System.
-Tracks multi-agent context, telemetry, observed evidence, root cause hypothesis, confidence, and actions.
+LangGraph Agent State definition for OpsMind Research & Knowledge System.
+Tracks research goals, planning decisions, retrieved RAG chunks, web findings,
+evidence verification, confidence, citations, and generated reports.
 """
 
 from typing import TypedDict, List, Dict, Any, Optional, Annotated
 import operator
 
 
-class IncidentState(TypedDict):
-    # Core request metadata
-    incident_query: str
-    service: str
+class ResearchState(TypedDict):
+    # Core query & session metadata
+    query: str
     thread_id: Optional[str]
     
     # Execution & Routing Plan
     plan: List[str]
-    investigation_paths: List[str]  # e.g. ["logs", "metrics", "deployments", "knowledge"]
+    need_rag: bool
+    need_web: bool
+    search_queries: List[str]
+    focus_areas: List[str]
     current_step: str
     status: str
     
-    # Telemetry and Investigation Findings
-    logs_data: List[Dict[str, Any]]
-    metrics_data: Dict[str, Any]
-    deployments_data: List[Dict[str, Any]]
-    knowledge_data: List[Dict[str, Any]]
+    # Research findings from RAG & Web
+    rag_findings: List[Dict[str, Any]]
+    web_findings: List[Dict[str, Any]]
     
-    # Extracted Evidence & Synthesis
+    # Evidence Evaluation & Verification
     observed_evidence: Annotated[List[str], operator.add]
-    inferred_cause: str
+    verified_sources: List[Dict[str, Any]]
+    critic_score: float
     confidence: float
-    recommended_actions: List[str]
+    critic_notes: str
+    
+    # Report Output
+    report: str
+    
+    # Audit telemetry
+    agents_used: Annotated[List[str], operator.add]
     tools_used: Annotated[List[str], operator.add]
     
     # Guardrail and Message History
@@ -41,5 +49,6 @@ class IncidentState(TypedDict):
     final_output: Dict[str, Any]
 
 
-# Backward compatibility alias
-AgentState = IncidentState
+# Aliases for backward compatibility
+AgentState = ResearchState
+IncidentState = ResearchState

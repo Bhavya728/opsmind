@@ -1,79 +1,69 @@
 """
-Unit and integration tests for MCP Tools.
+Unit Tests for MCP Tools and Discovery Layer.
+Tests tool schemas, web search, knowledge search, and document lookup.
 """
 
-try:
-    import pytest
-except ImportError:
-    from tests import compat as pytest
-from pydantic import ValidationError
-
 from app.tools.mcp_tools import (
-    get_service_logs,
-    get_service_metrics,
-    get_deployment_history,
-    search_runbook,
-)
-from app.tools.schemas import (
-    GetServiceLogsInput,
-    GetServiceMetricsInput,
-    GetDeploymentHistoryInput,
-    SearchRunbookInput,
+    get_mcp_tool_definitions,
+    execute_mcp_tool,
+    web_search,
+    knowledge_search,
+    document_lookup
 )
 
 
-def test_get_service_logs_valid():
-    result = get_service_logs.invoke({"service": "order-service", "severity": "ERROR"})
+def test_mcp_tool_definitions_schema():
+    """Test that MCP discovery returns valid tool definitions with JSON schemas."""
+    definitions = get_mcp_tool_definitions()
+    assert isinstance(definitions, list)
+    assert len(definitions) >= 3
+    tool_names = [d["name"] for d in definitions]
+    assert "web_search" in tool_names
+    assert "knowledge_search" in tool_names
+    assert "document_lookup" in tool_names
+    for d in definitions:
+        assert "inputSchema" in d
+        assert "properties" in d["inputSchema"]
+
+
+def test_mcp_execute_knowledge_search():
+    """Test executing knowledge search via MCP dispatcher."""
+    result = execute_mcp_tool("knowledge_search", {"query": "RAG evaluation faithfulness", "limit": 3})
     assert result["status"] == "success"
-    assert result["service"] == "order-service"
-    assert isinstance(result["logs"], list)
-    assert result["count"] > 0
-    # Every log entry should be an error or fatal
-    for log in result["logs"]:
-        assert log["level"] in ("ERROR", "FATAL")
+    assert result["tool"] == "knowledge_search"
+    assert len(result["results"]) > 0
+    first_hit = result["results"][0]
+    assert "content" in first_hit
+    assert "score" in first_hit
 
 
-def test_get_service_logs_unrecognized_service():
-    result = get_service_logs.invoke({"service": "non-existent-microservice"})
-    assert result["status"] == "warning"
-    assert result["count"] == 0
-
-
-def test_get_service_logs_schema_validation():
-    with pytest.raises(ValidationError):
-        GetServiceLogsInput(service="")
-    with pytest.raises(ValidationError):
-        GetServiceLogsInput(service="order-service", severity="INVALID_SEVERITY")
-    with pytest.raises(ValidationError):
-        GetServiceLogsInput(service="order-service", limit=500)
-
-
-def test_get_service_metrics_valid():
-    result = get_service_metrics.invoke({"service": "order-service"})
+def test_mcp_execute_web_search():
+    """Test executing web search via MCP dispatcher."""
+    result = execute_mcp_tool("web_search", {"query": "LangGraph multi-agent systems", "num_results": 2})
     assert result["status"] == "success"
-    assert "p99_latency_ms" in result["metrics"]
-    assert len(result["metrics"]["p99_latency_ms"]) > 0
+    assert result["tool"] == "web_search"
+    assert len(result["results"]) > 0
+    assert "url" in result["results"][0]
 
 
-def test_get_service_metrics_specific_metric():
-    result = get_service_metrics.invoke({"service": "payment-service", "metric_name": "active_db_connections"})
+def test_mcp_execute_document_lookup():
+    """Test fetching full document by doc_id via MCP."""
+    result = execute_mcp_tool("document_lookup", {"doc_id": "doc-rag-eval-01"})
     assert result["status"] == "success"
-    assert "active_db_connections" in result["metrics"]
+    assert result["doc_id"] == "doc-rag-eval-01"
+    assert "title" in result
+    assert "content" in result
 
 
-def test_get_deployment_history_valid():
-    result = get_deployment_history.invoke({"service": "order-service", "limit": 2})
-    assert result["status"] == "success"
-    assert len(result["deployments"]) > 0
-    first_dep = result["deployments"][0]
-    assert "version" in first_dep
-    assert "changelog" in first_dep
+def test_mcp_execute_invalid_tool():
+    """Test that invoking an unregistered tool returns a clean error."""
+    result = execute_mcp_tool("non_existent_tool", {})
+    assert result["status"] == "error"
+    assert "not registered" in result["error"]
 
 
-def test_search_runbook_valid():
-    result = search_runbook.invoke({"query": "database connection pool exhaustion", "service": "order-service"})
-    assert result["status"] == "success"
-    assert result["count"] > 0
-    first_rb = result["results"][0]
-    assert "RB-ORD-01" in first_rb["id"]
-    assert "mitigation_steps" in first_rb
+def test_mcp_execute_guardrail_blocked():
+    """Test that MCP execution handler blocks malicious command arguments."""
+    result = execute_mcp_tool("knowledge_search", {"query": "eval; rm -rf /"})
+    assert result["status"] == "blocked"
+    assert "error" in result

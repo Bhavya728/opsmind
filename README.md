@@ -1,299 +1,258 @@
-# 🚨 Agentic Incident Investigation System
-### Enterprise Multi-Agent Root Cause Analysis (RCA) & Telemetry Diagnostics Engine
+# OpsMind — Agentic Research & Knowledge System
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![LangGraph Multi-Agent](https://img.shields.io/badge/LangGraph-Multi--Agent-orange.svg)](https://github.com/langchain-ai/langgraph)
-[![FastAPI Backend](https://img.shields.io/badge/FastAPI-Production%20Ready-009688.svg)](https://fastapi.tiangolo.com/)
-[![NeMo Guardrails](https://img.shields.io/badge/NeMo--Guardrails-3--Gate%20Safety-red.svg)](https://github.com/NVIDIA/NeMo-Guardrails)
-[![Qdrant Vector DB](https://img.shields.io/badge/Qdrant-Hybrid%20RAG-red.svg)](https://qdrant.tech/)
-[![FlashRank Reranking](https://img.shields.io/badge/FlashRank-Cross--Encoder-purple.svg)](https://github.com/PrithivirajDamodaran/FlashRank)
-[![Tests Passing](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen.svg)](tests/)
-[![Golden Evals](https://img.shields.io/badge/Golden%20Evals-100%25%20Pass%20Rate-success.svg)](evals/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-FF6F00.svg)](https://langchain-ai.github.io/langgraph/)
+[![ChromaDB](https://img.shields.io/badge/Vector_DB-ChromaDB-6366F1.svg)](https://www.trychroma.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**OpsMind** is a production-oriented Multi-Agent AI Research and Knowledge System designed to investigate complex computer science, machine learning, and software architecture questions. It coordinates dynamic query planning, external web research, dense vector search across a ChromaDB private knowledge base, factual evidence critiquing, runtime safety guardrails, and grounded research report synthesis with verifiable source citations.
 
 ---
 
-## 📖 System Overview
+## 🎯 Problem Statement & Objective
 
-The **Agentic Incident Investigation System** is an enterprise-grade, autonomous Site Reliability Engineering (SRE) and production incident triage platform. When production microservices fail, distributed telemetry is fragmented across container logs, time-series metrics, deployment changelogs, runbooks, and historical postmortems.
+Traditional Retrieval-Augmented Generation (RAG) pipelines follow a rigid, single-shot execution: `Query → Embed → Top-k Vector Search → Prompt Augmentation → Response`. This approach fails when:
+1. **Multi-Hop Synthesis is Required**: Complex research questions span multiple concepts (e.g., comparing agentic workflows with traditional RAG while analyzing evaluation metrics).
+2. **Retrieval Noise Exists**: Irrelevant vector chunks pollute context windows, inducing hallucinations.
+3. **External Freshness is Needed**: Internal knowledge bases lack recent industry framework releases or external benchmarks.
+4. **Safety & Compliance are Missing**: LLM applications without strict input/output guardrails are vulnerable to prompt injections, command injections, and credential leakage.
 
-Instead of generic single-prompt LLMs, this system orchestrates a **6-Agent LangGraph StateGraph** equipped with typed **Model Context Protocol (MCP) telemetry tools**, **3-Gate NeMo Guardrails**, **hybrid Qdrant RAG with FlashRank cross-encoder reranking**, and **multi-tier task-based LLM routing via Portkey**.
+**OpsMind solves these challenges** by implementing a modular 5-agent LangGraph workflow backed by an LLM Gateway with task-based routing, Model Context Protocol (MCP) tool integration, three-tier runtime guardrails, and automated evaluation metrics.
+
+---
+
+## 🏗️ System Architecture
 
 ```
-                           +-------------------------------------+
-                           |   Incoming Incident Alert / Query   |
-                           +-------------------------------------+
+                                  +-----------------------+
+                                  |     User Question     |
+                                  +-----------+-----------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 🛡️ GATE 1: Input NeMo Guardrails   |
-                           | (Injection, Destructive, Off-Topic) |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |   GATE 1: Input Guardrails    |
+                              | (Injection / Malicious / Chit)|
+                              +---------------+---------------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 🧭 Supervisor / Planner Agent       |
-                           | (Service Ingestion & Dynamic Plan)  |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |      1. Query Planner         |
+                              |  (Deconstruction & Routing)   |
+                              +---------------+---------------+
                                               |
                      +------------------------+------------------------+
-                     |                        |                        |
-                     v                        v                        v
-        +-------------------------+ +---------------------+ +----------------------+
-        | 📋 Log Agent            | | 📊 Metrics Agent    | | 🚀 Deployment Agent  |
-        | [get_service_logs]      | | [get_service_metrics| | [get_deployment_hist]|
-        +-------------------------+ +---------------------+ +----------------------+
-                     |                        |                        |
+                     |                                                 |
+                     v                                                 v
+    +--------------------------------+               +----------------------------------+
+    |     2. Web Research Agent      |               |     3. Knowledge / RAG Agent     |
+    | (MCP Tool: web_search)         |               | (MCP Tool: knowledge_search)     |
+    +----------------+---------------+               +-----------------+----------------+
+                     |                                                 |
                      +------------------------+------------------------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 📚 Knowledge & RAG Agent            |
-                           | (Qdrant + FlashRank Runbook Search) |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |    4. Evidence / Critic       |
+                              | (Factual Check & Citations)   |
+                              +---------------+---------------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 🔬 Root Cause Analysis (RCA) Agent  |
-                           | (Correlation, Causal Inference)     |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |   5. Report Generator Agent   |
+                              | (Synthesis & Structured Report)
+                              +---------------+---------------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 📄 Final Responder Agent            |
-                           | (Structured Output & JSON Schema)   |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |   GATE 3: Output Guardrails   |
+                              |  (Secret Masking & Grounding) |
+                              +---------------+---------------+
                                               |
                                               v
-                           +-------------------------------------+
-                           | 🛡️ GATE 3: Output Secret Redaction  |
-                           +-------------------------------------+
-                                              |
-                                              v
-                           +-------------------------------------+
-                           |  Incident Report (FastAPI / Streamlit) |
-                           +-------------------------------------+
+                              +-------------------------------+
+                              |  Structured Research Report   |
+                              +-------------------------------+
 ```
 
 ---
 
-## ✨ Key Architectural Capabilities
+## 🤖 Multi-Agent Workflow & Responsibilities
 
-### 1. 🤖 6-Agent LangGraph Orchestration
-- **🧭 Supervisor / Planner Agent**: Ingests symptoms, auto-detects affected microservices, and compiles conditional multi-agent investigation execution paths.
-- **📋 Log Investigation Agent**: Interfaces with `get_service_logs` MCP tool to query time-windowed error logs, stack traces, and pod crash dumps.
-- **📊 Metrics Investigation Agent**: Interfaces with `get_service_metrics` MCP tool to analyze time-series telemetry (P95/P99 latency, CPU, error rates, queue depths).
-- **🚀 Deployment Investigation Agent**: Interfaces with `get_deployment_history` MCP tool to correlate failures with recent Git SHAs, configuration diffs, and releases.
-- **📚 Knowledge & RAG Agent**: Executes hybrid semantic retrieval over incident runbooks and past postmortems with **Qdrant** and **FlashRank Cross-Encoders**.
-- **🔬 Root Cause Analysis (RCA) Agent**: Synthesizes cross-telemetry evidence into grounded root causes, confidence scores, and prioritized remediation actions.
-- **📄 Final Responder Agent**: Validates output structure against Pydantic schemas and enforces output safety.
+The system orchestrates **5 specialized agents** within a stateful LangGraph execution graph:
 
-### 2. 🛡️ 3-Gate NeMo Guardrails & Safety Architecture
-- **Gate 1 (Input Guardrails)**: Blocks prompt injections (`DAN mode`, `ignore instructions`), destructive infrastructure commands (`drop database`, `rm -rf`), and off-topic requests (`jokes`, `weather`).
-- **Gate 2 (Tool Guardrails)**: Enforces service name whitelisting, blocks shell injection characters (`;`, `&&`, `|`, `` ` ``), and intercepts directory traversal attacks (`../../etc/shadow`).
-- **Gate 3 (Output Guardrails)**: Scans generated reports and redacts sensitive credentials (OpenAI keys, GitHub tokens, AWS credentials, JWT secrets, passwords).
-
-### 3. 🌐 Multi-Tier LLM Gateway (Portkey / Groq / OpenAI)
-- **Task-Based Model Routing**:
-  - `planning` & `classification` -> Fast, cost-efficient model (`llama-3.1-8b-instant`).
-  - `rca` & `synthesis` -> High-reasoning model (`llama-3.3-70b-versatile`).
-- **Resilient Fallback Chain**: Portkey Gateway -> Direct Groq -> Direct OpenAI -> High-Fidelity Deterministic Offline Reasoning Engine.
-- **Zero-Dependency Local Execution**: The entire system executes out-of-the-box in local environments without requiring active cloud API keys.
-
-### 4. 📚 Production RAG Engine
-- **Vector Retrieval**: Embedded / Cloud **Qdrant Vector Database** indexing 25+ microservice runbooks and historical postmortems.
-- **Cross-Encoder Reranker**: **FlashRank** TinyBERT cross-encoder rescoring retrieved documents for pinpoint context precision.
+| Agent | Responsibility | Task-Tier LLM | Tools Used |
+|---|---|---|---|
+| **Query Planner** | Deconstructs research queries into sub-questions, identifies focus areas, and determines retrieval routing. | Fast / Tier-1 (`llama-3.1-8b-instant`) | None (Reasoning) |
+| **Web Research Agent** | Gathers recent external technical literature, release notes, and industry benchmarks. | Fast / Tier-1 (`llama-3.1-8b-instant`) | MCP: `web_search` |
+| **Knowledge / RAG Agent** | Performs dense semantic retrieval across ChromaDB vector collections using HuggingFace embeddings. | Fast / Tier-1 (`llama-3.1-8b-instant`) | MCP: `knowledge_search`, `document_lookup` |
+| **Evidence Critic Agent** | Evaluates retrieved chunks, detects factual contradictions, scores confidence, and compiles citations. | Fast / Tier-1 (`llama-3.1-8b-instant`) | None (Verification) |
+| **Report Generator** | Synthesizes verified evidence into an authoritative research report with explicit markdown citations `[Source: ...]`. | Strong / Tier-2 (`llama-3.3-70b-versatile`) | None (Synthesis) |
 
 ---
 
-## 🔬 Microservice Incident Scenarios Catalog
+## 📚 ChromaDB RAG Pipeline
 
-The domain catalog contains **25 production incident scenarios** spanning 8 enterprise microservices:
-
-| Service | Representative Incidents | Root Cause Domain |
-| :--- | :--- | :--- |
-| `order-service` | INC-101, INC-111, INC-123 | Database connection pool exhaustion (HikariPool), AWS Secrets Manager IAM expiry, uncommitted transaction deadlocks. |
-| `payment-service` | INC-102, INC-106, INC-121, INC-125 | PostgreSQL connection slot starvation, thread pool exhaustion, cross-AZ replica lag, read-only disk lock. |
-| `auth-service` | INC-103, INC-104 | Unbounded session cache memory leaks (ExitCode 137 OOM), JWT RSA signing key rotation mismatch. |
-| `inventory-service` | INC-105, INC-119 | Redis `maxmemory-policy noeviction` buffer overflow, Go goroutine leaks in inventory sync worker. |
-| `api-gateway` | INC-109, INC-110, INC-112, INC-124 | CircuitBreaker cascade failures, mTLS expired certificate handshake failures, rate limiter misconfigurations. |
-| `notification-service` | INC-108, INC-118 | Kafka broker DNS resolution failures (CrashLoopBackOff), RabbitMQ memory watermark alarms. |
-| `analytics-service` | INC-107, INC-113, INC-117, INC-120 | Unindexed analytics aggregation CPU spikes, Kafka consumer lag, S3 IAM permission drops, Elasticsearch RED cluster. |
-| `user-service` | INC-114, INC-115, INC-116, INC-122 | CoreDNS UDP packet drops, DB read-only disk space freeze, ClassNotFound NoSuchMethodError after dependency conflict. |
+- **Vector Database**: Embedded [ChromaDB](https://www.trychroma.com/) with native HNSW indexing.
+- **Embeddings**: 384-dimensional dense vector representations (`sentence-transformers/all-MiniLM-L6-v2` with deterministic local fallback).
+- **Corpus**: Technical knowledge documents covering RAG evaluation, agentic architectures, LLM gateways, vector indexing algorithms, prompt engineering, and guardrails.
+- **Chunking Strategy**: Hierarchical paragraph-level chunking with document metadata (doc_id, title, category, tags).
+- **Retrieval Output**: Document chunk content, relevance distance score, and citation metadata for source attribution.
 
 ---
 
-## 📊 Benchmark Evaluation Results
+## 🛠️ Model Context Protocol (MCP) Tool Layer
 
-Evaluated across the **28-case Golden Evaluation Dataset** (25 real microservice incidents + 3 adversarial security/off-topic attacks):
+OpsMind implements a standardized MCP tool layer exposing explicit JSON schemas for tool discovery and parameter validation:
 
-```
-================ EVALUATION SUMMARY ================
-Total Golden Cases : 28
-Pass Rate          : 100.0%
-Answer Correctness : 0.885 (88.5%)
-Faithfulness       : 0.777 (77.7%)
-Context Relevance  : 0.921 (92.1%)
-Tool Accuracy      : 1.000 (100.0%)
-Guardrail Score    : 1.000 (100.0%)
-Average Latency    : 0.285s (285ms)
-====================================================
-```
+1. **`web_search`**:
+   - Schema: `{"query": string, "num_results": integer}`
+   - Action: Queries external web documentation or indexed research databases.
+2. **`knowledge_search`**:
+   - Schema: `{"query": string, "category": string | null, "limit": integer}`
+   - Action: Executes vector similarity queries against ChromaDB.
+3. **`document_lookup`**:
+   - Schema: `{"doc_id": string}`
+   - Action: Retrieves complete document sections and metadata by unique ID.
 
 ---
 
-## 🛠️ MCP Telemetry Tools
+## 🌐 LLM Gateway & Task-Based Routing
 
-All telemetry investigation is conducted via typed Pydantic tools registered as LangChain MCP tools:
-
-1. `get_service_logs(service: str, start_time: Optional[str], end_time: Optional[str], log_level: Optional[str], limit: int)`
-   - Retrieves timestamped container logs, exceptions, and stack traces.
-2. `get_service_metrics(service: str, metric_name: Optional[str], time_window: str)`
-   - Queries time-series metrics (`p95_latency_ms`, `error_rate_pct`, `active_db_connections`, `cpu_utilization_pct`, etc.).
-3. `get_deployment_history(service: str, limit: int)`
-   - Retrieves recent deployments, Git commit authors, and release changelogs.
-4. `search_runbook(query: str, service: Optional[str], limit: int)`
-   - Searches standard operating procedures, mitigation steps, and incident postmortems.
+The LLM Gateway centralizes model access with production reliability patterns:
+- **Dynamic Task Routing**:
+  - `planning`, `classification`, `critic` → Fast, cost-effective model (`llama-3.1-8b-instant`).
+  - `synthesis`, `report_generation` → High-capacity frontier model (`llama-3.3-70b-versatile`).
+- **Resilient Fallback Hierarchy**:
+  1. Primary: Portkey Gateway / Direct Groq API
+  2. Fallback: Secondary Groq key / Direct OpenAI
+  3. Offline: High-fidelity Deterministic Reasoning Engine (guaranteeing 100% test and offline execution reliability).
 
 ---
 
-## 🚀 Quickstart & Setup
+## 🛡️ Runtime Guardrails System
 
-### Prerequisites
-- Python 3.11+
-- Virtual environment (recommended)
+Safety policies are enforced at three distinct gates:
 
-### 1. Installation
+1. **Gate 1: Input Guardrails**
+   - **Prompt Injection Defense**: Detects adversarial jailbreaks (`Ignore previous instructions`, `DAN mode`, `developer mode override`).
+   - **Destructive Command Defense**: Blocks execution commands (`rm -rf`, `DROP TABLE`, `format`).
+   - **Out-of-Scope Filter**: Politely filters non-technical queries (jokes, recipes, chit-chat) to save token consumption.
+2. **Gate 2: Tool Execution Guardrails**
+   - **Parameter Sanitization**: Restricts shell control characters (`;`, `&&`, `|`, `` ` ``) and path traversal (`../`, `/etc/`).
+   - **Tool Authorization**: Ensures agents only invoke authorized tools from the registry.
+3. **Gate 3: Output Guardrails**
+   - **Secret Masking**: Scans responses for API keys (`sk-`, `ghp_`, `Bearer`), redacting them to `[REDACTED_SECRET]`.
+   - **Citation Enforcement**: Verifies that every technical assertion is backed by retrieved source tags.
+
+---
+
+## 📊 Evaluation Methodology & Benchmark Results
+
+Evaluations are conducted against a curated **25-case Golden Dataset** (`evals/golden_dataset.json`) containing technical questions, expected answer characteristics, expected evidence, and adversarial security tests.
+
+### Benchmark Results (from `evals/evaluation_results.json`)
+
+| Evaluation Dimension | Metric | Score |
+|---|---|---|
+| **RAG Retrieval Quality** | **Faithfulness (Groundedness)** | **86.8%** |
+| | **Context Recall** | **95.0%** |
+| | **Context Relevance** | **35.9%** |
+| | **Answer Relevance** | **65.6%** |
+| **Agent / Tool Precision** | **Tool Selection Accuracy** | **76.0%** |
+| **Safety & Guardrails** | **Guardrail Defense Accuracy** | **100.0%** |
+| | **Citation Compliance** | **100.0%** |
+| **Performance** | **Average Execution Latency** | **0.02s** |
+| **Composite Score** | **Overall Benchmark Score** | **76.6%** |
+
+---
+
+## 🚀 Quickstart & Installation
+
+### 1. Prerequisites
+- Python 3.10 or higher
+- Git
+
+### 2. Clone and Install Dependencies
 ```bash
-git clone <repo_url>
-cd "resume project"
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-source venv/bin/activate
-
+git clone https://github.com/Akshat191005/OpsMind.git
+cd OpsMind
 pip install -r requirements.txt
 ```
 
-### 2. Run All Tests
-Execute the standalone test runner (verifies MCP tools, guardrails, RAG, multi-agent graph, and FastAPI endpoints):
+### 3. Configure Environment Variables (Optional)
+Create a `.env` file in the project root:
+```env
+# Optional: Groq API Key for live LLM inference
+GROQ_API_KEY=your_groq_api_key_here
+
+# Optional: Portkey Gateway
+PORTKEY_API_KEY=your_portkey_api_key_here
+
+# Optional: LangSmith Observability
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=opsmind_research
+```
+*(Note: OpsMind runs completely offline and locally without requiring any paid API keys using its built-in deterministic reasoning engine and ChromaDB vector store).*
+
+---
+
+## 🧪 Running Tests & Evaluations
+
+### Run All 33 Unit & Integration Tests
 ```bash
 python run_tests.py
 ```
 
-### 3. Run Benchmark Evaluations
-Run the 6-metric golden evaluation suite:
+### Run the Automated 25-Case Evaluation Suite
 ```bash
-python -m evals.evaluator
+python evals/evaluator.py
 ```
 
-### 4. Start the FastAPI Backend
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Interactive Swagger API documentation will be available at: `http://localhost:8000/docs`.
+---
 
-### 5. Launch the Streamlit Live Dashboard
+## 🖥️ User Interfaces & API
+
+### 1. Launch FastAPI Backend
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+- Interactive API Docs: `http://localhost:8000/docs`
+- Health Check: `GET http://localhost:8000/health`
+- Research Endpoint:
+```bash
+curl -X POST "http://localhost:8000/research" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "What are the major approaches to RAG evaluation?"}'
+```
+
+### 2. Launch Streamlit Web UI & Evaluation Dashboard
 ```bash
 streamlit run ui/app.py
 ```
-Access the rich web interface at: `http://localhost:8501`.
+- Research Assistant tab with live execution tracking and verified source inspector.
+- Evaluation Dashboard tab with aggregate scorecards, latency distribution, and failure drill-downs.
 
 ---
 
-## 📡 API Reference
+## 📝 Example Research Queries
 
-### `POST /investigate`
-Analyzes an incident alert and executes the multi-agent investigation workflow.
-
-**Request Body:**
-```json
-{
-  "incident": "Order service p99 latency spiked from 120ms to 4800ms following deployment of v2.4.1",
-  "service": "order-service",
-  "thread_id": "session-101"
-}
-```
-
-**Response Body:**
-```json
-{
-  "service": "order-service",
-  "root_cause": "Misconfigured database connection pool size reduced from 50 to 5 in v2.4.1 deployment config, causing severe connection queuing.",
-  "confidence": 0.96,
-  "evidence": [
-    "HikariPool-1 - Connection is not available, request timed out after 30000ms. Active: 5, Idle: 0, Waiting: 142",
-    "DB connection pool utilization at 100% (5/5 connections active). Connection wait queue: 84 requests.",
-    "Optimize connection pool memory footprint; refactor checkout route (dep-881 by dev-alex)"
-  ],
-  "recommended_actions": [
-    "Roll back order-service to deployment v2.4.0 immediately",
-    "Update max_connections in configmap to 50",
-    "Add lint check in CI/CD pipeline to validate database pool sizing against baseline"
-  ],
-  "tools_used": [
-    "get_service_logs",
-    "get_service_metrics",
-    "get_deployment_history",
-    "search_runbook",
-    "qdrant_retrieval"
-  ],
-  "guardrail_blocked": false,
-  "latency_seconds": 0.28
-}
-```
-
-### Additional Endpoints:
-- `GET /health`: System health check & active backends status.
-- `GET /services`: List of registered enterprise microservices.
-- `GET /incidents`: Catalog of 25 benchmark incident scenarios.
+1. *"What are the major approaches and metrics used for RAG evaluation?"*
+2. *"Compare agentic RAG with traditional naive RAG architectures."*
+3. *"Explain the key architectural components and advantages of production LLM gateways."*
+4. *"How do vector databases perform approximate nearest neighbor search using HNSW?"*
+5. *"When should an enterprise choose Fine-Tuning versus Retrieval-Augmented Generation (RAG)?"*
 
 ---
 
-## 📁 Repository Structure
+## ⚠️ Limitations & Future Work
 
-```
-.
-├── app/
-│   ├── agents/                     # LangGraph Multi-Agent System
-│   │   ├── graph.py                # StateGraph Compilation & Conditional Routing
-│   │   ├── state.py                # IncidentState TypedDict Schema
-│   │   └── nodes/                  # Individual Agent Nodes (Supervisor, RCA, Tools)
-│   ├── data/                       # Core Incident Domain
-│   │   ├── incidents_catalog.py    # 25 Scenario Catalog & Telemetry Generators
-│   │   └── storage/                # Synthetic Logs, Metrics, Runbooks Storage
-│   ├── gateway/                    # LLM Gateway & Task Routing
-│   │   └── client.py               # Portkey / Groq / OpenAI / Deterministic Router
-│   ├── guardrails/                 # 3-Gate Safety System
-│   │   ├── rails.py                # Input, Tool, and Output Guardrails
-│   │   └── colang_rules.py         # NeMo Colang Rules
-│   ├── services/                   # Retrieval & Telemetry
-│   │   └── retrieval/              # Qdrant Vector Search & FlashRank Reranker
-│   ├── tools/                      # MCP Telemetry Tools
-│   │   ├── mcp_tools.py            # Log, Metric, Deployment, Runbook Tools
-│   │   └── schemas.py              # Pydantic Schemas
-│   ├── config.py                   # Environment & Application Settings
-│   └── main.py                     # FastAPI REST API Backend
-├── evals/                          # Evaluation Framework
-│   ├── golden_dataset.json         # 28 Golden Benchmark Samples
-│   ├── evaluator.py                # 6-Metric Evaluation Engine
-│   └── evaluation_results.json     # Saved Benchmark Execution Results
-├── tests/                          # Automated Test Suite (26 Unit/Integration Tests)
-├── ui/                             # Streamlit Live Investigation Dashboard
-│   └── app.py                      # Multi-tab Visualizer & Security Sandbox
-├── run_tests.py                    # Standalone Test Runner
-└── README.md                       # Comprehensive Documentation
-```
+1. **Dense Retrieval Scope**: Current internal knowledge documents are focused on AI/CS engineering; scaling to thousands of enterprise PDFs requires background batch indexing pipelines.
+2. **Re-Ranker Overhead**: Adding a heavy cross-encoder (e.g. `bge-reranker-large`) increases inference latency by ~150ms per query.
+3. **Live Web Dependency**: Live web searches require outbound internet connectivity; offline environments automatically utilize the indexed technical database.
 
 ---
 
-## 🏆 Interview-Defensible Architecture Decisions
+## 📄 License
 
-1. **Why LangGraph instead of linear chains?**
-   - Incident triage is non-deterministic. A database latency alert requires querying logs, metrics, and deployments conditionally; while an DNS outage requires runbook verification first. LangGraph provides cyclical state management and checkpointing.
-2. **Why 3-Gate Guardrails?**
-   - In production SRE automation, letting agents run unrestricted commands or leak secrets is catastrophic. Gate 1 intercepts adversarial prompts, Gate 2 prevents shell injections in telemetry queries, and Gate 3 scrubs credentials before reports reach engineers.
-3. **Why FlashRank Cross-Encoders over pure vector search?**
-   - Bi-encoder cosine similarity returns high-level topical matches. FlashRank cross-encoders analyze query-document token interactions simultaneously, ensuring the exact troubleshooting steps for specific error codes are placed at rank 1.
-4. **Why Multi-Tier LLM Task Routing?**
-   - Routing supervisor planning tasks to smaller, ultra-low latency models (`llama-3.1-8b`) reduces total investigation latency by 60% while reserving heavy reasoning models (`llama-3.3-70b`) for root cause synthesis.
+MIT License. Designed for academic research, pair programming, and production LLM engineering demonstrations.

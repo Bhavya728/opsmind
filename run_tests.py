@@ -1,6 +1,6 @@
 """
-Standalone Test Runner for Incident Investigation System.
-Executes all unit, integration, guardrail, and API tests without external test runner dependencies.
+Standalone Test Runner for OpsMind Agentic Research & Knowledge System.
+Executes all unit, integration, guardrail, gateway, RAG, and API tests.
 """
 
 import sys
@@ -17,14 +17,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def run_all_tests():
     print("=" * 70)
-    print("🚀 RUNNING INCIDENT INVESTIGATION SYSTEM TEST SUITE")
+    print("🚀 RUNNING OPSMIND RESEARCH & KNOWLEDGE SYSTEM TEST SUITE")
     print("=" * 70)
 
     test_modules = [
-        ("MCP Tools", "tests.test_mcp_tools"),
-        ("NeMo Guardrails & Safety", "tests.test_guardrails"),
-        ("RAG Pipeline & Qdrant", "tests.test_rag_pipeline"),
-        ("LangGraph Multi-Agent Workflow", "tests.test_agent_graph"),
+        ("Runtime Guardrails & Safety", "tests.test_guardrails"),
+        ("LLM Gateway & Task-Based Routing", "tests.test_gateway"),
+        ("MCP Tools & Protocol Discovery", "tests.test_mcp_tools"),
+        ("ChromaDB RAG Pipeline & Embeddings", "tests.test_rag_pipeline"),
+        ("LangGraph 5-Agent Research Workflow", "tests.test_agent_graph"),
         ("FastAPI Backend Endpoints", "tests.test_api"),
     ]
 

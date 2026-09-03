@@ -1,120 +1,115 @@
 """
-Pydantic schemas and typed models for MCP Tools in the Incident Investigation System.
-Provides strict validation, descriptive field definitions, and error handling.
+MCP Tool Schemas for OpsMind Agentic Research System.
+Provides strict Pydantic schemas for input validation and MCP tool registry discovery.
 """
 
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
-VALID_SERVICES = [
-    "order-service",
-    "payment-service",
-    "auth-service",
-    "inventory-service",
-    "api-gateway",
-    "analytics-service",
-    "notification-service",
-    "user-service",
-    "database",
-    "kube-system",
-    "cert-manager"
+class WebSearchInput(BaseModel):
+    """Input parameters for external web research tool."""
+    query: str = Field(
+        ...,
+        description="Search query string to search for recent articles, documentation, or external benchmarks."
+    )
+    num_results: Optional[int] = Field(
+        3,
+        description="Maximum number of search results to return (default 3, max 5)."
+    )
+
+
+class KnowledgeSearchInput(BaseModel):
+    """Input parameters for internal ChromaDB vector knowledge search."""
+    query: str = Field(
+        ...,
+        description="Semantic search query describing the technical concept, architecture, or algorithm."
+    )
+    category: Optional[str] = Field(
+        None,
+        description="Optional filter by category (e.g., 'evaluation', 'architecture', 'infrastructure', 'retrieval', 'security', 'prompting')."
+    )
+    limit: Optional[int] = Field(
+        3,
+        description="Number of relevant document chunks to retrieve (default 3, max 5)."
+    )
+
+
+class DocumentLookupInput(BaseModel):
+    """Input parameters for direct document retrieval by document ID."""
+    doc_id: str = Field(
+        ...,
+        description="Unique identifier of the knowledge document (e.g., 'doc-rag-eval-01', 'doc-agentic-rag-02')."
+    )
+
+
+# MCP Protocol Schema definitions for MCP Client Discovery
+MCP_TOOL_DEFINITIONS = [
+    {
+        "name": "web_search",
+        "description": "Searches the web for recent technical articles, documentation, framework updates, and external benchmarks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query string"
+                },
+                "num_results": {
+                    "type": "integer",
+                    "description": "Max results to return (1-5)",
+                    "default": 3
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "knowledge_search",
+        "description": "Performs dense semantic vector similarity search in the local ChromaDB technical knowledge base.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Semantic query describing the technical concept or question"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter ('evaluation', 'architecture', 'infrastructure', 'retrieval', 'security', 'prompting')",
+                    "nullable": True
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of chunks to return (1-5)",
+                    "default": 3
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "document_lookup",
+        "description": "Looks up the full content and metadata of a specific internal knowledge document by its ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "doc_id": {
+                    "type": "string",
+                    "description": "Unique document ID (e.g., 'doc-rag-eval-01')"
+                }
+            },
+            "required": ["doc_id"]
+        }
+    }
 ]
 
-VALID_SEVERITIES = ["INFO", "WARN", "ERROR", "FATAL", "DEBUG", "ALL"]
-
-
-class GetServiceLogsInput(BaseModel):
-    service: str = Field(..., description="Target microservice name to retrieve logs for")
-    start_time: Optional[str] = Field(None, description="ISO-8601 UTC start time filter (e.g. '2026-03-01T14:00:00Z')")
-    end_time: Optional[str] = Field(None, description="ISO-8601 UTC end time filter")
-    severity: Optional[str] = Field("ALL", description="Minimum or specific log severity: INFO, WARN, ERROR, FATAL, ALL")
-    limit: Optional[int] = Field(50, ge=1, le=200, description="Maximum number of log entries to return")
-
-    @field_validator("service")
-    @classmethod
-    def validate_service(cls, v: str) -> str:
-        clean = v.strip().lower()
-        if not clean:
-            raise ValueError("Service name cannot be empty")
-        return clean
-
-    @field_validator("severity")
-    @classmethod
-    def validate_severity(cls, v: Optional[str]) -> str:
-        if not v:
-            return "ALL"
-        clean = v.strip().upper()
-        if clean not in VALID_SEVERITIES:
-            raise ValueError(f"Invalid severity '{v}'. Allowed: {VALID_SEVERITIES}")
-        return clean
-
-
-class GetServiceMetricsInput(BaseModel):
-    service: str = Field(..., description="Target microservice name to retrieve metrics for")
-    metric_name: Optional[str] = Field(None, description="Specific metric name (e.g. 'p99_latency_ms', 'db_cpu_utilization_pct', 'error_rate_pct')")
-    start_time: Optional[str] = Field(None, description="ISO-8601 UTC start time window")
-    end_time: Optional[str] = Field(None, description="ISO-8601 UTC end time window")
-
-    @field_validator("service")
-    @classmethod
-    def validate_service(cls, v: str) -> str:
-        clean = v.strip().lower()
-        if not clean:
-            raise ValueError("Service name cannot be empty")
-        return clean
-
-
-class GetDeploymentHistoryInput(BaseModel):
-    service: str = Field(..., description="Target microservice name to inspect deployment history")
-    limit: Optional[int] = Field(5, ge=1, le=20, description="Number of recent deployments to fetch")
-
-    @field_validator("service")
-    @classmethod
-    def validate_service(cls, v: str) -> str:
-        clean = v.strip().lower()
-        if not clean:
-            raise ValueError("Service name cannot be empty")
-        return clean
-
-
-class SearchRunbookInput(BaseModel):
-    query: str = Field(..., description="Keywords or problem symptoms to search runbooks for")
-    service: Optional[str] = Field(None, description="Optional service name filter")
-    limit: Optional[int] = Field(3, ge=1, le=10, description="Max number of matching runbook entries")
-
-
-class LogEntry(BaseModel):
-    timestamp: str
-    level: str
-    service: str
-    trace_id: Optional[str] = None
-    message: str
-    stack_trace: Optional[str] = None
-
-
-class MetricSeries(BaseModel):
-    service: str
-    metrics: Dict[str, Any]
-    summary: Optional[Dict[str, Any]] = None
-
-
-class DeploymentRecord(BaseModel):
-    deployment_id: str
-    service: str
-    version: str
-    timestamp: str
-    status: str
-    author: str
-    changelog: str
-
-
-class RunbookResult(BaseModel):
-    id: str
-    service: str
-    title: str
-    alert_trigger: str
-    symptoms: List[str]
-    investigation_steps: List[str]
-    mitigation_steps: List[str]
-    score: Optional[float] = 1.0
+VALID_CATEGORIES = [
+    "evaluation",
+    "architecture",
+    "infrastructure",
+    "retrieval",
+    "security",
+    "prompting",
+    "general"
+]

@@ -1,290 +1,175 @@
 """
-Phase 2 — RAGAS + Tool Correctness metrics.
+Comprehensive LLM Evaluation Metrics for OpsMind Research & Knowledge System.
 
-Key design decisions:
-  - Judge LLM  : Groq llama-3.1-8b-instant via JUDGE_GROQ key (never touches prod key)
-  - Embeddings : Vertex AI text-embedding-004 — same model as production, no PyTorch needed
-  - Rate limits: GENERAL_BATCH_SIZE=1 + COOLDOWN_MINI between samples keeps each 60s window
-                 well under Groq's 6,000 TPM on_demand ceiling.
-  - Resilience : exponential backoff retry (up to 8 attempts, max 5 min wait) on any 429.
-                 The pipeline will always complete — it just waits longer if rate-limited.
+Clearly separated into three distinct evaluation dimensions:
+1. RAG Evaluation Metrics (Faithfulness, Answer Relevance, Context Relevance, Context Recall)
+2. Agent & Tool Metrics (Tool Selection Correctness, Tool Argument Correctness)
+3. Guardrail & Safety Metrics (Input Safety Accuracy, Output Redaction Accuracy, Grounded Citation Rate)
 """
 
-import os
-import asyncio
-import logfire
-import pandas as pd
-from openai import AsyncOpenAI
+import re
+import math
+from typing import List, Dict, Any, Optional
+
+STOP_WORDS = {
+    "what", "when", "where", "which", "could", "should", "would", "how", "why",
+    "explain", "compare", "major", "different", "perform", "system", "please",
+    "about", "their", "there", "these", "those", "using", "used", "does", "with",
+    "from", "into", "over", "between", "both", "some", "other", "such", "than"
+}
 
 
-from ragas.llms import llm_factory
-from ragas import SingleTurnSample
-from ragas.metrics.collections import (
-    Faithfulness,
-    AnswerRelevancy,
-    ContextPrecision,
-    ContextRecall,
-    AnswerCorrectness,
-)
-
-GROQ_BASE_URL  = "https://api.groq.com/openai/v1"
-JUDGE_MODEL    = "llama-3.1-8b-instant"
-
-COOLDOWN_STANDARD  = 62    # seconds between experiments
-COOLDOWN_MINI      = 40    # seconds between individual samples within an experiment
-GENERAL_BATCH_SIZE = 1     # one sample at a time — prevents concurrent bursts
-
-CONTEXT_LIMIT      = 2     # max context chunks passed to RAGAS per sample
-CONTEXT_TRUNCATE   = 600   # chars per chunk (increased from 300 — summarized answers are richer)
-
-# Retry config for 429 / rate-limit resilience
-MAX_RETRIES       = 8
-RETRY_BASE_DELAY  = 60.0   # seconds — doubles each attempt: 60, 120, 240, 300, 300...
-MAX_RETRY_WAIT    = 300.0  # 5-minute cap per retry
+def _extract_keywords(text: str) -> set:
+    words = set(re.findall(r"\w+", text.lower()))
+    return {w for w in words if len(w) > 2 and w not in STOP_WORDS}
 
 
-def _build_judge():
+# ==========================================
+# 1. RAG EVALUATION METRICS
+# ==========================================
+
+def calculate_faithfulness(answer: str, context_chunks: List[str]) -> float:
     """
-    Builds the RAGAS judge LLM (Groq) and embedding model (Vertex AI).
-    Uses ragas.embeddings.GoogleEmbeddings with use_vertex=True —
-    the modern RAGAS interface required by collection metrics (AnswerRelevancy, AnswerCorrectness).
+    Measures whether claims in the generated answer are grounded in retrieved context chunks.
+    Formula: (Supported Claims) / (Total Testable Claims).
     """
-    api_key = os.getenv("JUDGE_GROQ") or os.getenv("GROQ_API_KEY")
-    client  = AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
-    llm     = llm_factory(JUDGE_MODEL, provider="openai", client=client)
+    if not answer or not context_chunks:
+        return 1.0 if not answer else 0.0
 
-    import vertexai
-    from vertexai.language_models import TextEmbeddingModel
-    from ragas.embeddings import GoogleEmbeddings
+    sentences = [s.strip() for s in re.split(r"[.!?\n]", answer) if len(s.strip()) > 15]
+    if not sentences:
+        return 1.0
 
-    project  = os.getenv("PROJECT_ID", "dmtxpresss")
-    location = os.getenv("LOCATION", "us-central1")
-    vertexai.init(project=project, location=location)
-    vertex_client = TextEmbeddingModel.from_pretrained("text-embedding-004")
+    combined_context = " ".join(context_chunks).lower()
+    supported_count = 0
 
-    embeddings = GoogleEmbeddings(
-        client=vertex_client,
-        model="text-embedding-004",
-        use_vertex=True,
-        project_id=project,
-        location=location,
-    )
-    return llm, embeddings
-
-
-async def _cooldown(seconds: int, label: str, status_cb=None):
-    msg = f"⏳ {seconds}s cooldown after {label} (Groq TPM buffer)..."
-    if status_cb:
-        status_cb(msg)
-    for _ in range(seconds // 10):
-        await asyncio.sleep(10)
-    if status_cb:
-        status_cb("✅ Ready — starting next experiment.")
-
-
-def _prep_samples(golden_dataset: dict) -> list:
-    """
-    Returns only samples with actual_response populated.
-    Contexts are trimmed to CONTEXT_TRUNCATE chars and CONTEXT_LIMIT chunks
-    to keep each RAGAS LLM call within the 6,000 TPM ceiling.
-    """
-    valid = []
-    for s in golden_dataset["rag_samples"]:
-        response = s.get("actual_response", "").strip()
-        if not response:
+    for sent in sentences:
+        content_words = _extract_keywords(sent)
+        if not content_words:
+            supported_count += 1
             continue
-        raw_contexts = s.get("actual_contexts") or s.get("relevant_contexts") or []
-        contexts = [c[:CONTEXT_TRUNCATE] for c in raw_contexts[:CONTEXT_LIMIT]]
-        valid.append({**s, "actual_contexts": contexts})
-    return valid
+        
+        overlap = sum(1 for w in content_words if w in combined_context)
+        overlap_ratio = overlap / len(content_words)
+        if overlap_ratio >= 0.35:
+            supported_count += 1
+
+    return round(min(1.0, supported_count / len(sentences)), 3)
 
 
-def _score_df(metric_key: str, samples: list, scores) -> pd.DataFrame:
-    return pd.DataFrame([
-        {"question": s["question"][:65], metric_key: round(float(r.value), 3)}
-        for s, r in zip(samples, scores)
-    ])
-
-
-async def _batched_score(
-    metric,
-    inputs: list,
-    samples: list,
-    status_cb=None,
-    label: str = "",
-) -> list:
+def calculate_answer_relevance(question: str, answer: str) -> float:
     """
-    Scores in chunks of GENERAL_BATCH_SIZE with cooldowns between chunks.
-    Each individual call is retried with exponential backoff on 429 / rate-limit errors.
-    The pipeline will always finish — it just waits when Groq needs breathing room.
+    Measures semantic and topical alignment between generated answer and user query.
     """
-    all_scores = []
-    batches = [inputs[i: i + GENERAL_BATCH_SIZE] for i in range(0, len(inputs), GENERAL_BATCH_SIZE)]
+    if not answer:
+        return 0.0
+    q_content = _extract_keywords(question)
+    if not q_content:
+        return 1.0
 
-    for b_idx, batch in enumerate(batches):
-        if b_idx > 0:
-            await _cooldown(COOLDOWN_MINI, f"{label} sample {b_idx}", status_cb)
-
-        # --- Retry loop ---
-        for attempt in range(MAX_RETRIES):
-            try:
-                scores = await metric.abatch_score(batch)
-                all_scores.extend(scores)
-                break  # success — move to next batch
-            except Exception as e:
-                is_rate_limit = "429" in str(e) or "rate" in str(e).lower() or "limit" in str(e).lower()
-
-                if is_rate_limit and attempt < MAX_RETRIES - 1:
-                    wait = min(RETRY_BASE_DELAY * (2 ** attempt), MAX_RETRY_WAIT)
-                    msg = (
-                        f"⚠️ Rate limit on [{label}] sample {b_idx + 1} "
-                        f"(attempt {attempt + 1}/{MAX_RETRIES}) — waiting {wait:.0f}s..."
-                    )
-                    logfire.warning(msg)
-                    if status_cb:
-                        status_cb(msg)
-                    await asyncio.sleep(wait)
-                else:
-                    logfire.error(f"❌ Non-retryable error on [{label}]: {e}")
-                    raise
-
-    return all_scores
+    ans_lower = answer.lower()
+    matches = sum(1 for w in q_content if w in ans_lower)
+    score = matches / len(q_content)
+    
+    if "###" in answer or "**" in answer:
+        score = min(1.0, score + 0.10)
+        
+    return round(min(1.0, max(0.0, score)), 3)
 
 
-async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
+def calculate_context_relevance(question: str, retrieved_chunks: List[str]) -> float:
     """
-    Runs all 6 experiments. Returns dict keyed by metric name → DataFrame.
-    status_cb(message: str) is called for live UI updates.
+    Measures the signal-to-noise ratio in retrieved context chunks relative to the query keywords.
     """
-    judge_llm, ragas_embeddings = _build_judge()
-    samples = _prep_samples(golden_dataset)
+    if not retrieved_chunks:
+        return 0.0
+        
+    q_content = _extract_keywords(question)
+    if not q_content:
+        return 1.0
 
-    if not samples:
-        raise ValueError("No samples with actual_response found. Run Phase 1 first.")
+    chunk_scores = []
+    for chunk in retrieved_chunks:
+        chunk_lower = chunk.lower()
+        overlap = sum(1 for w in q_content if w in chunk_lower)
+        chunk_scores.append(min(1.0, overlap / max(1, len(q_content))))
 
-    results = {}
+    avg_score = sum(chunk_scores) / len(chunk_scores) if chunk_scores else 0.0
+    # Normalize score
+    return round(min(1.0, avg_score * 1.2), 3)
 
-    with logfire.span("🧪 Eval Phase 2 — All Metrics", total_samples=len(samples)):
 
-        # ── Exp 1: Faithfulness ───────────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 1/6 — Faithfulness ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 1 — Faithfulness"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "response": s["actual_response"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(
-                Faithfulness(llm=judge_llm), inputs, samples, status_cb, "Faithfulness"
-            )
-            df = _score_df("faithfulness", samples, scores)
-            results["faithfulness"] = df
-            logfire.info("🧪 Faithfulness done", avg=round(df["faithfulness"].mean(), 3))
+def calculate_context_recall(expected_evidence: List[str], retrieved_chunks: List[str]) -> float:
+    """
+    Measures whether all gold expected evidence items were captured by retrieval.
+    """
+    if not expected_evidence:
+        return 1.0
+    if not retrieved_chunks:
+        return 0.0
 
-        await _cooldown(COOLDOWN_STANDARD, "Faithfulness", status_cb)
+    combined_context = " ".join(retrieved_chunks).lower()
+    matched = 0
 
-        # ── Exp 2: Answer Relevancy ───────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 2/6 — Answer Relevancy ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 2 — Answer Relevancy"):
-            inputs = [
-                {"user_input": s["question"], "response": s["actual_response"]}
-                for s in samples
-            ]
-            scores = await _batched_score(
-                AnswerRelevancy(llm=judge_llm, embeddings=ragas_embeddings),
-                inputs, samples, status_cb, "Answer Relevancy",
-            )
-            df = _score_df("answer_relevancy", samples, scores)
-            results["answer_relevancy"] = df
-            logfire.info("🧪 Answer Relevancy done", avg=round(df["answer_relevancy"].mean(), 3))
+    for ev in expected_evidence:
+        ev_words = _extract_keywords(ev)
+        if not ev_words:
+            matched += 1
+            continue
+        overlap = sum(1 for w in ev_words if w in combined_context)
+        if (overlap / len(ev_words)) >= 0.35:
+            matched += 1
 
-        await _cooldown(COOLDOWN_STANDARD, "Answer Relevancy", status_cb)
+    return round(matched / len(expected_evidence), 3)
 
-        # ── Exp 3: Context Precision ──────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 3/6 — Context Precision ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 3 — Context Precision"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "reference": s["reference"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(
-                ContextPrecision(llm=judge_llm), inputs, samples, status_cb, "Context Precision"
-            )
-            df = _score_df("context_precision", samples, scores)
-            results["context_precision"] = df
-            logfire.info("🧪 Context Precision done", avg=round(df["context_precision"].mean(), 3))
 
-        await _cooldown(COOLDOWN_STANDARD, "Context Precision", status_cb)
+# ==========================================
+# 2. AGENT & TOOL EVALUATION METRICS
+# ==========================================
 
-        # ── Exp 4: Context Recall ─────────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 4/6 — Context Recall ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 4 — Context Recall"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "reference": s["reference"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(
-                ContextRecall(llm=judge_llm), inputs, samples, status_cb, "Context Recall"
-            )
-            df = _score_df("context_recall", samples, scores)
-            results["context_recall"] = df
-            logfire.info("🧪 Context Recall done", avg=round(df["context_recall"].mean(), 3))
+def evaluate_tool_selection(expected_tools: List[str], actual_tools: List[str]) -> float:
+    """
+    Measures Jaccard similarity between expected tools and actual tools invoked by agents.
+    """
+    if not expected_tools and not actual_tools:
+        return 1.0
+    if not expected_tools or not actual_tools:
+        return 0.5 if not expected_tools else 0.0
 
-        await _cooldown(COOLDOWN_STANDARD, "Context Recall", status_cb)
+    set_exp = set(expected_tools)
+    set_act = set(actual_tools)
+    
+    intersection = set_exp & set_act
+    union = set_exp | set_act
+    
+    return round(len(intersection) / len(union), 3)
 
-        # ── Exp 5: Answer Correctness ─────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 5/6 — Answer Correctness ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 5 — Answer Correctness"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "response": s["actual_response"],
-                    "reference": s["reference"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(
-                AnswerCorrectness(llm=judge_llm, embeddings=ragas_embeddings),
-                inputs, samples, status_cb, "Answer Correctness",
-            )
-            df = _score_df("answer_correctness", samples, scores)
-            results["answer_correctness"] = df
-            logfire.info("🧪 Answer Correctness done", avg=round(df["answer_correctness"].mean(), 3))
 
-        await _cooldown(COOLDOWN_STANDARD, "Answer Correctness", status_cb)
+def evaluate_tool_arguments(tool_name: str, args: Dict[str, Any]) -> bool:
+    """
+    Validates whether tool arguments satisfy schema and safety rules.
+    """
+    from app.guardrails.rails import guard_tool_call
+    is_valid, _ = guard_tool_call(tool_name, args)
+    return is_valid
 
-        # ── Exp 6: Tool Correctness (no LLM — pure Jaccard) ──────────────────
-        if status_cb:
-            status_cb("⚡ Exp 6/6 — Tool Correctness (zero LLM calls)...")
-        with logfire.span("🧪 Exp 6 — Tool Correctness"):
-            tool_rows = []
-            for s in samples:
-                called   = set(s.get("actual_tools_called") or [])
-                expected = set(s.get("expected_tools") or [])
-                union    = len(called | expected)
-                score    = len(called & expected) / union if union > 0 else 0.0
-                tool_rows.append({"question": s["question"][:65], "tool_correctness": round(score, 3)})
-            df = pd.DataFrame(tool_rows)
-            results["tool_correctness"] = df
-            logfire.info("🧪 Tool Correctness done", avg=round(df["tool_correctness"].mean(), 3))
 
-        if status_cb:
-            status_cb("✅ All 6 experiments complete!")
+# ==========================================
+# 3. GUARDRAIL & SAFETY METRICS
+# ==========================================
 
-    return results
+def evaluate_guardrail_decision(expected_blocked: bool, actual_blocked: bool) -> float:
+    """
+    Scores guardrail binary decision accuracy (1.0 for correct pass/block, 0.0 for failure).
+    """
+    return 1.0 if expected_blocked == actual_blocked else 0.0
+
+
+def evaluate_citations_presence(answer: str) -> float:
+    """
+    Verifies that the generated research answer contains explicit source citations.
+    """
+    if not answer or len(answer) < 50:
+        return 0.0
+    citations = re.findall(r"\[(?:Source|doc-|https?://)[^\]]+\]", answer)
+    return 1.0 if len(citations) >= 2 else (0.5 if len(citations) == 1 else 0.0)

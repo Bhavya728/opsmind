@@ -1,9 +1,0 @@
-# ==============================================================================
-# UI MICROSERVICE — Streamlit chat frontend only
-# Calls backend via HTTPS — no GCP SDK, no LangChain, no heavy ML deps
-# ==============================================================================
-
-streamlit
-requests==2.33.1
-python-dotenv==1.2.2
-logfire[requests]==4.32.1

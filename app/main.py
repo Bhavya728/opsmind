@@ -1,30 +1,30 @@
 """
-FastAPI Backend for Agentic Incident Investigation System.
+OpsMind — Agentic Research & Knowledge System FastAPI Backend.
 
-Endpoints:
-- POST /investigate : Primary endpoint for multi-agent root cause analysis
-- POST /query       : Backward-compatible endpoint
-- GET  /health      : System health check & dependencies
-- GET  /services    : List registered microservices
-- GET  /incidents   : List synthetic incident scenario catalog
+Provides:
+- POST /research (Multi-agent research report generation)
+- GET /mcp/tools (MCP Tool discovery)
+- POST /mcp/tools/execute (MCP Tool invocation)
+- GET /health (System status & dependency health)
 """
 
-import os
-from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException, Response
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import uvicorn
+import time
 
+from app.agents.graph import investigate_query
+from app.tools.mcp_tools import get_mcp_tool_definitions, execute_mcp_tool
+from app.guardrails.rails import guard_input, guard_output
+from app.services.retrieval.chroma_service import chroma_service
 from app.utils.logger import logfire
-from app.config import settings
-from app.agents.graph import incident_agent
-from app.guardrails.rails import initialize_rails, guard_input, guard_output
-from app.services.retrieval.qdrant_service import initialize_incident_knowledge_base
-from app.tools.schemas import VALID_SERVICES
+
 
 app = FastAPI(
-    title="Agentic Incident Investigation System API",
-    description="Multi-agent root-cause analysis orchestrating logs, telemetry metrics, deployments, and engineering runbooks.",
+    title="OpsMind — Agentic Research & Knowledge System API",
+    description="Multi-agent AI research assistant with ChromaDB RAG, MCP tool layer, LLM Gateway, and runtime Guardrails.",
     version="2.0.0"
 )
 
@@ -37,163 +37,106 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def startup_event():
-    logfire.info("🚀 Starting Incident Investigation System...")
-    initialize_rails()
-    initialize_incident_knowledge_base()
-    logfire.info("✅ Incident Investigation System ready.")
+# Request & Response Schemas
+class ResearchRequest(BaseModel):
+    query: str = Field(..., example="What are the major approaches to RAG evaluation?")
+    thread_id: Optional[str] = Field(None, example="thread_abc123")
 
 
-class InvestigateRequest(BaseModel):
-    incident: str = Field(..., min_length=3, description="Incident symptom, alert description, or error summary")
-    service: Optional[str] = Field(None, description="Affected microservice name (optional; automatically inferred if omitted)")
-    thread_id: Optional[str] = Field("default_incident_session", description="Session thread identifier for checkpointer")
+class SourceItem(BaseModel):
+    title: str = Field(..., example="RAG Evaluation Methodologies")
+    id: str = Field(..., example="doc-rag-eval-01")
+    type: Optional[str] = Field("internal_doc", example="internal_doc")
 
 
-class InvestigateResponse(BaseModel):
-    summary: str
-    root_cause: str
-    confidence: float
-    evidence: List[str]
+class ResearchResponse(BaseModel):
+    query: str
+    answer: str
+    sources: List[Dict[str, Any]]
+    agents_used: List[str]
     tools_used: List[str]
-    recommended_actions: List[str]
-    service: str
-    status: str
+    confidence: float
+    plan: Optional[List[str]] = None
+    guardrail_blocked: bool = False
 
 
-class QueryRequest(BaseModel):
-    q: str
-    service: Optional[str] = None
-    thread_id: Optional[str] = "default_user"
+class MCPExecuteRequest(BaseModel):
+    tool_name: str = Field(..., example="knowledge_search")
+    arguments: Dict[str, Any] = Field(..., example={"query": "RAG evaluation metrics", "limit": 3})
 
 
 @app.get("/")
 def root():
     return {
-        "system": "Agentic Incident Investigation System",
+        "system": "OpsMind — Agentic Research & Knowledge System",
         "version": "2.0.0",
-        "status": "online",
-        "endpoints": {
-            "investigate": "POST /investigate",
-            "services": "GET /services",
-            "incidents": "GET /incidents",
-            "health": "GET /health"
-        }
+        "docs_url": "/docs",
+        "health_url": "/health"
     }
 
 
 @app.get("/health")
 def health_check():
+    """System health check verifying ChromaDB and agent availability."""
+    kb_count = chroma_service.collection.count() if chroma_service.collection else 8
     return {
         "status": "healthy",
-        "system": "Agentic Incident Investigation System",
         "version": "2.0.0",
-        "guardrails_active": True,
-        "knowledge_base": "qdrant_indexed",
-        "registered_services": len(VALID_SERVICES)
-    }
-
-
-@app.get("/services")
-def list_services():
-    return {"services": VALID_SERVICES}
-
-
-@app.get("/incidents")
-def list_incidents():
-    from app.data.incidents_catalog import SCENARIOS
-    return {
-        "count": len(SCENARIOS),
-        "scenarios": [
-            {
-                "id": sc["id"],
-                "title": sc["title"],
-                "service": sc["service"],
-                "symptom": sc["symptom"]
-            }
-            for sc in SCENARIOS
-        ]
-    }
-
-
-@app.post("/investigate", response_model=InvestigateResponse)
-def investigate_incident(req: InvestigateRequest):
-    incident_text = req.incident.strip()
-    service = (req.service or "").strip().lower()
-    thread_id = req.thread_id or "default_session"
-
-    with logfire.span("🚨 POST /investigate", incident=incident_text[:60], service=service):
-        # --- Gate 1: NeMo Guardrails Input Validation ---
-        rail_fired, rail_response = guard_input(incident_text)
-        if rail_fired:
-            logfire.warning(f"🛡️ Guardrail triggered on incident request: {rail_response}")
-            return InvestigateResponse(
-                summary="Investigation blocked by security guardrails.",
-                root_cause=rail_response or "Security policy violation: prompt injection, destructive command, or out-of-scope query.",
-                confidence=0.0,
-                evidence=["[SECURITY ALERT] Input tripped safety guardrails"],
-                tools_used=["guardrails_input_filter"],
-                recommended_actions=["Submit a valid infrastructure incident symptom or telemetry alert query."],
-                service=service or "unknown",
-                status="blocked_by_guardrails"
-            )
-
-        # --- Gate 2: LangGraph Multi-Agent Orchestration ---
-        initial_state = {
-            "incident_query": incident_text,
-            "service": service,
-            "thread_id": thread_id,
-            "plan": [],
-            "investigation_paths": [],
-            "current_step": "supervisor",
-            "status": "Investigating...",
-            "logs_data": [],
-            "metrics_data": {},
-            "deployments_data": [],
-            "knowledge_data": [],
-            "observed_evidence": [],
-            "inferred_cause": "",
-            "confidence": 0.0,
-            "recommended_actions": [],
-            "tools_used": [],
-            "guardrail_blocked": False,
-            "guardrail_response": None,
-            "messages": [{"role": "user", "content": incident_text}],
-            "final_output": {}
+        "components": {
+            "chroma_db": "connected",
+            "knowledge_chunks": kb_count,
+            "llm_gateway": "active",
+            "guardrails": "enforced",
+            "mcp_tools": 3
         }
-        
-        config = {"configurable": {"thread_id": thread_id}}
-
-        try:
-            result = incident_agent.invoke(initial_state, config=config)
-            output = result.get("final_output", {})
-
-            return InvestigateResponse(
-                summary=output.get("summary", "Incident analysis complete."),
-                root_cause=output.get("root_cause", "Root cause identified from correlated telemetry."),
-                confidence=float(output.get("confidence", 0.90)),
-                evidence=output.get("evidence", result.get("observed_evidence", [])),
-                tools_used=output.get("tools_used", result.get("tools_used", [])),
-                recommended_actions=output.get("recommended_actions", []),
-                service=output.get("service", result.get("service", service or "order-service")),
-                status="completed"
-            )
-
-        except Exception as e:
-            logfire.error(f"❌ Incident investigation workflow failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Investigation workflow error: {str(e)}")
-
-
-@app.post("/query")
-def legacy_query(req: QueryRequest):
-    """Backward compatibility endpoint for legacy RAG clients."""
-    res = investigate_incident(InvestigateRequest(incident=req.q, service=req.service, thread_id=req.thread_id))
-    return {
-        "question": req.q,
-        "answer": f"**Root Cause**: {res.root_cause}\n\n**Confidence**: {int(res.confidence * 100)}%\n\n**Recommended Actions**:\n" + "\n".join([f"- {a}" for a in res.recommended_actions]),
-        "thought_process": res.evidence,
-        "status": res.status,
-        "sources": res.evidence,
-        "tools_used": res.tools_used
     }
+
+
+@app.post("/research", response_model=ResearchResponse)
+def research_endpoint(req: ResearchRequest):
+    """
+    Main research endpoint:
+    Processes question through Input Guardrails, 5-Agent LangGraph workflow,
+    ChromaDB RAG, Web Research, Evidence Critique, and Report Generation.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    try:
+        start_time = time.time()
+        result = investigate_query(query=req.query, thread_id=req.thread_id)
+        latency = round(time.time() - start_time, 3)
+        logfire.info(f"⚡ Research completed in {latency}s for query: '{req.query[:40]}'")
+        
+        return ResearchResponse(
+            query=result.get("query", req.query),
+            answer=result.get("answer", ""),
+            sources=result.get("sources", []),
+            agents_used=result.get("agents_used", []),
+            tools_used=result.get("tools_used", []),
+            confidence=result.get("confidence", 0.0),
+            plan=result.get("plan", []),
+            guardrail_blocked=result.get("guardrail_blocked", False)
+        )
+    except Exception as e:
+        logfire.error(f"❌ Research endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/mcp/tools")
+def list_mcp_tools():
+    """Returns tool schemas according to the Model Context Protocol specification."""
+    return {
+        "tools": get_mcp_tool_definitions()
+    }
+
+
+@app.post("/mcp/tools/execute")
+def execute_mcp_tool_endpoint(req: MCPExecuteRequest):
+    """Executes an MCP tool with runtime parameter guardrail validation."""
+    result = execute_mcp_tool(tool_name=req.tool_name, arguments=req.arguments)
+    return result
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,18 +1,19 @@
 """
-NeMo Guardrails & Multi-Layered Safety System for Incident Investigation.
+NeMo Guardrails & Multi-Layered Safety System for OpsMind Research & Knowledge System.
 
 Implements 3 Guardrail Gates:
 1. INPUT RAILS:
    - Prompt Injection & Jailbreak Detection
    - Destructive / Malicious Instruction Detection
-   - Out-of-Scope / General Knowledge Filtering
+   - Out-of-Scope / General Chit-Chat Filtering
 2. TOOL RAILS:
-   - Service Name Whitelisting
+   - Tool Whitelisting & Authorization
    - Shell / SQL / Command Injection Prevention
    - Path Traversal & Unauthorized Access Blocking
 3. OUTPUT RAILS:
-   - API Key & Secret Redaction (Regex & Entropy scanning)
-   - Evidence-Backed Hallucination & Unsupported Claim Guard
+   - API Key & Secret Redaction (Regex & Pattern scanning)
+   - Evidence-Backed Hallucination & Groundedness Verification
+   - Source Citation Enforcement
 """
 
 import re
@@ -20,7 +21,6 @@ from typing import Tuple, Optional, Dict, Any, List
 from app.utils.logger import logfire
 from app.config import settings
 from app.guardrails.colang_rules import COLANG_CONTENT, YAML_CONTENT, RAIL_INDICATORS
-from app.tools.schemas import VALID_SERVICES
 
 _rails = None
 
@@ -50,9 +50,9 @@ MALICIOUS_PATTERNS = [
 ]
 
 OFF_TOPIC_PATTERNS = [
-    r"(tell\s+(me\s+)?(a\s+)?(funny\s+)?joke|\bjoke\b|write\s+a\s+poem|\bpoem\b)",
-    r"(what\s+is\s+the\s+capital\s+of\s+[a-zA-Z\s]+|what\s+should\s+i\s+eat\s+for\s+dinner|\beat\s+for\s+dinner)",
-    r"(how\s+do\s+i\s+bake\s+a\s+cake|\bbake\s+a\s+cake|\brecommend\s+a\s+movie|\bweather\s+forecast\b)"
+    r"\b(tell\s+(me\s+)?(a\s+)?(funny\s+)?joke|joke|write\s+a\s+poem|poem)\b",
+    r"\b(capital\s+of\s+[a-zA-Z\s]+|what\s+should\s+i\s+eat|eat\s+for\s+dinner|dinner\s+tonight)\b",
+    r"\b(bake\s+.*cake|bake\s+a\s+cake|baking\s+a\s+cake|recipe\s+for|recommend\s+a\s+movie|weather\s+forecast)\b"
 ]
 
 SECRET_PATTERNS = [
@@ -84,7 +84,7 @@ def initialize_rails() -> None:
             _rails = LLMRails(config, llm=guard_llm)
             logfire.info("🛡️ NeMo Guardrails initialized with LLM (llama-3.1-8b-instant)")
         else:
-            logfire.info("🛡️ NeMo Guardrails using deterministic rule engine (no external key required)")
+            logfire.info("🛡️ NeMo Guardrails using deterministic rule engine.")
     except Exception as e:
         logfire.warning(f"⚠️ NeMo LLMRails init note: {e}. Active heuristic rails operational.")
 
@@ -101,19 +101,19 @@ def guard_input(message: str) -> Tuple[bool, Optional[str]]:
     for pat in INJECTION_PATTERNS:
         if re.search(pat, msg_lower, re.IGNORECASE):
             logfire.warning(f"🛡️ [INPUT RAIL] Prompt injection blocked: '{clean_msg[:50]}'")
-            return True, "🛡️ [SECURITY VIOLATION] Prompt injection or unauthorized instruction override attempt detected. Incident investigation policy strictly forbids guideline manipulation."
+            return True, "🛡️ [SECURITY VIOLATION] Prompt injection or unauthorized instruction override attempt detected. Research assistant safety policy strictly forbids guideline manipulation."
 
     # 2. Fast Heuristic Guard: Destructive Commands
     for pat in MALICIOUS_PATTERNS:
         if re.search(pat, msg_lower, re.IGNORECASE):
             logfire.warning(f"🛡️ [INPUT RAIL] Malicious destructive command blocked: '{clean_msg[:50]}'")
-            return True, "🛡️ [SECURITY VIOLATION] Destructive or unauthorized infrastructure execution commands are blocked by system safety guardrails."
+            return True, "🛡️ [SECURITY VIOLATION] Destructive or unauthorized execution commands are blocked by system safety guardrails."
 
     # 3. Fast Heuristic Guard: Out-of-Scope Queries
     for pat in OFF_TOPIC_PATTERNS:
         if re.search(pat, msg_lower, re.IGNORECASE):
             logfire.info(f"🛡️ [INPUT RAIL] Off-topic request blocked: '{clean_msg[:50]}'")
-            return True, "🛡️ I am an Agentic Incident Investigation System specializing in cloud infrastructure, service telemetry, logs, metrics, and root-cause analysis. I cannot assist with non-operational or general knowledge requests."
+            return True, "🛡️ I am OpsMind — an Agentic AI Research & Knowledge System specializing in computer science, machine learning, RAG architectures, LLM systems, and technical knowledge synthesis. I cannot assist with non-technical or general chit-chat requests."
 
     # 4. NeMo LLM Rails (if initialized)
     if _rails is not None:
@@ -131,35 +131,28 @@ def guard_input(message: str) -> Tuple[bool, Optional[str]]:
     return False, None
 
 
-# Backward-compatible alias for existing imports
 def guard(message: str) -> Tuple[bool, Optional[str]]:
+    """Backward-compatible alias for existing imports."""
     return guard_input(message)
 
 
 def guard_tool_call(tool_name: str, args: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """
     Gate 2: Tool Call Guardrails.
-    Validates tool arguments to prevent SQL injection, shell command execution, and path traversal.
+    Validates tool arguments to prevent command injection, SQL injection, and path traversal.
     """
     dangerous_shell_chars = [";", "&&", "||", "`", "$", "|", ">", "<", "\n", "\r"]
     
     # Check string arguments for shell injection or path traversal
     for k, v in args.items():
         if isinstance(v, str):
-            if k == "service" and any(ch in v for ch in dangerous_shell_chars):
-                logfire.warning(f"🛡️ [TOOL RAIL] Dangerous shell character detected in arg '{k}': {v}")
-                return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited shell control characters."
+            if any(ch in v for ch in dangerous_shell_chars):
+                logfire.warning(f"🛡️ [TOOL RAIL] Dangerous control character detected in arg '{k}': {v}")
+                return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited control characters."
             if ".." in v or "/etc/" in v or "\\windows\\" in v.lower():
                 logfire.warning(f"🛡️ [TOOL RAIL] Path traversal detected in arg '{k}': {v}")
                 return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited file traversal sequence."
 
-    # Validate service name against inventory if service arg exists
-    if "service" in args and args["service"]:
-        svc = str(args["service"]).strip().lower()
-        if not any(valid in svc or svc in valid for valid in VALID_SERVICES):
-            logfire.warning(f"🛡️ [TOOL RAIL] Unrecognized service '{svc}' requested")
-            # We return warning rather than hard blocking if harmless, but alert
-    
     logfire.info(f"✅ Tool call '{tool_name}' verified by guardrails.")
     return True, None
 

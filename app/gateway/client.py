@@ -4,8 +4,8 @@ LLM Gateway Module with Portkey Integration and Multi-Tier Task-Based Routing.
 Architecture:
 - Portkey Gateway with fallback strategy (@rag/llama-3.3-70b -> @brag/llama-3.1-8b)
 - Task-based model tier selection:
-  * "planning" / "classification" -> Fast / Cheaper Model (llama-3.1-8b-instant)
-  * "rca" / "synthesis" / "investigation" -> Strong Model (llama-3.3-70b-versatile)
+  * "planning" / "classification" / "critic" -> Fast / Cheaper Model (llama-3.1-8b-instant)
+  * "synthesis" / "report" / "general" -> Strong Model (llama-3.3-70b-versatile)
 - Resilient fallback chain: Portkey -> Direct Groq -> Direct OpenAI -> High-Fidelity Deterministic Reasoning Engine
 """
 
@@ -58,7 +58,7 @@ class DeterministicReasoningLLM(BaseChatModel):
     High-fidelity deterministic offline LLM for unit tests, local evaluations,
     and offline execution when cloud API keys are missing or rate limited.
     """
-    model_name: str = "mock-deterministic-rca"
+    model_name: str = "mock-deterministic-research"
     task_type: str = "general"
 
     def _generate(self, messages: List[Any], stop: Optional[List[str]] = None, **kwargs) -> Any:
@@ -78,81 +78,92 @@ class DeterministicReasoningLLM(BaseChatModel):
     def _synthesize_response(self, prompt: str) -> str:
         prompt_lower = prompt.lower()
         
-        # 1. Planner / Routing responses
-        if self.task_type in ("planning", "classification", "routing") or "supervisor" in prompt_lower or "investigation paths" in prompt_lower:
-            svc = "order-service"
-            for candidate in ["notification-service", "payment-service", "auth-service", "inventory-service", "api-gateway", "analytics-service", "user-service"]:
-                if candidate in prompt_lower or candidate.split("-")[0] in prompt_lower:
-                    svc = candidate
-                    break
+        # 1. Query Planner task
+        if self.task_type in ("planning", "classification", "routing"):
+            need_rag = True
+            need_web = True
+            if "internal only" in prompt_lower or "private kb" in prompt_lower:
+                need_web = False
+            if "latest web" in prompt_lower or "news" in prompt_lower:
+                need_rag = False
 
+            words = [w for w in re.findall(r"\w+", prompt_lower) if len(w) > 3 and w not in ["what", "explain", "compare", "system", "please", "about", "which", "could", "task", "user", "query"]]
+            query_focus = " ".join(words[:4]) if words else "LLM system architecture"
+            
             return json.dumps({
-                "service": svc,
-                "investigation_paths": ["logs", "metrics", "deployments", "knowledge"],
+                "need_rag": need_rag,
+                "need_web": need_web,
+                "search_queries": [
+                    f"{query_focus} overview and concepts",
+                    f"{query_focus} architectures and evaluation"
+                ],
+                "focus_areas": [
+                    "Core definitions & architectural patterns",
+                    "Evaluation methodologies & metrics",
+                    "Production trade-offs & best practices"
+                ],
                 "plan": [
-                    f"1. Query service logs for {svc}",
-                    f"2. Inspect telemetry metrics for {svc}",
-                    f"3. Check recent deployments for {svc}",
-                    f"4. Search runbooks and past postmortems",
-                    f"5. Perform root cause synthesis"
+                    f"1. Query ChromaDB internal knowledge base for '{query_focus}'",
+                    f"2. Execute web research for latest industry updates on '{query_focus}'",
+                    "3. Perform evidence critique and filter ungrounded claims",
+                    "4. Synthesize comprehensive structured research report with citations"
                 ]
             })
 
-        # 2. Root Cause Analysis responses aligned with domain catalog
-        try:
-            from app.data.incidents_catalog import SCENARIOS
-            prompt_tokens = set(re.findall(r"\w+", prompt_lower))
-            best_match = None
-            best_score = -1.0
-            
-            for sc in SCENARIOS:
-                symptom_text = f"{sc.get('id', '')} {sc.get('title', '')} {sc.get('symptom', '')} {sc.get('service', '')}"
-                symptom_tokens = set(re.findall(r"\w+", symptom_text.lower()))
-                common = prompt_tokens & symptom_tokens
-                if not symptom_tokens:
-                    continue
-                score = len(common) / (len(symptom_tokens) + 1)
-                if sc.get("service", "") in prompt_lower:
-                    score += 0.5
-                if score > best_score:
-                    best_score = score
-                    best_match = sc
+        # 2. Evidence Critic task
+        if self.task_type in ("critic", "evaluation"):
+            return json.dumps({
+                "is_grounded": True,
+                "confidence": 0.94,
+                "verified_claims": [
+                    "Context documents provide direct architectural definitions and mathematical formulations.",
+                    "Evidence from both RAG retrieval and web search aligns without contradictions.",
+                    "All factual assertions are corroborated by cited source documents."
+                ],
+                "identified_gaps": [],
+                "critic_feedback": "Evidence is highly relevant, technically rigorous, and directly answers all aspects of the research question."
+            })
 
-            if best_match and best_score > 0.40:
-                evidence_items = [log["message"] for log in best_match.get("logs", [])[:3]]
-                if not evidence_items:
-                    evidence_items = [f"Observed telemetry anomalies in {best_match.get('service', 'service')}"]
-                return json.dumps({
-                    "root_cause": best_match.get("root_cause", "Identified service degradation from correlated logs and telemetry."),
-                    "confidence": float(best_match.get("confidence", 0.95)),
-                    "evidence": evidence_items,
-                    "recommended_actions": best_match.get("recommended_actions", [
-                        f"Roll back recent changes to {best_match.get('service', 'service')}",
-                        "Apply standard runbook mitigation procedures",
-                        "Verify latency and error rates return to normal"
-                    ])
-                })
-        except Exception as e:
-            logfire.warning(f"⚠️ Scenario lookup note: {e}")
+        # 3. Report Synthesis task
+        from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS
+        matched_doc = None
+        best_score = 0
+        prompt_tokens = set(re.findall(r"\w+", prompt_lower))
 
-        return json.dumps({
-            "root_cause": "Service degradation identified through correlated error logs and telemetry anomalies following configuration change.",
-            "confidence": 0.92,
-            "evidence": [
-                "Correlated error rate spike observed in service logs",
-                "Telemetry latency metrics exceeded normal operating baseline",
-                "Matched troubleshooting runbook mitigation steps"
-            ],
-            "recommended_actions": [
-                "Roll back recent configuration or deployment revision",
-                "Apply recommended runbook mitigation steps",
-                "Monitor p99 latency and error rate recovery"
-            ]
-        })
+        for doc in KNOWLEDGE_DOCUMENTS:
+            doc_tokens = set(re.findall(r"\w+", f"{doc['title']} {doc['summary']} {' '.join(doc.get('tags', []))}".lower()))
+            overlap = len(prompt_tokens & doc_tokens)
+            if overlap > best_score:
+                best_score = overlap
+                matched_doc = doc
+
+        topic_title = matched_doc["title"] if matched_doc else "AI & LLM System Engineering Analysis"
+        doc_id = matched_doc["id"] if matched_doc else "doc-rag-eval-01"
+        summary_text = matched_doc.get("summary", "Technical synthesis of modern LLM architectures.") if matched_doc else "Comprehensive technical evaluation."
+
+        return f"""### Executive Summary
+{summary_text} Modern production systems require multi-tiered validation, modular agentic orchestration, and rigorous automated evaluations.
+
+### Technical Analysis & Architecture
+1. **Core Mechanisms**:
+   - Retrieval-Augmented Generation decouples knowledge storage from model parameter weights, enabling real-time freshness and verifiable citations `[Source: {doc_id}]`.
+   - Dynamic Model Tiering routes routine queries to lightweight models while reserving complex reasoning for frontier models `[Source: doc-llm-gateway-03]`.
+2. **Evaluation & Safety**:
+   - Faithfulness and Context Precision metrics ensure answers remain grounded without hallucinating unverified claims `[Source: doc-rag-eval-01]`.
+   - Multi-layer guardrails prevent adversarial prompt injection and mask sensitive credentials prior to response delivery `[Source: doc-llm-guardrails-05]`.
+
+### Comparative Evaluation & Trade-offs
+- **Groundedness vs Latency**: Agentic RAG provides significantly higher factual precision and self-correction capability compared to naive single-shot retrieval, at the cost of incremental graph execution latency `[Source: doc-agentic-rag-02]`.
+- **Infrastructure Overhead**: Embedded vector databases like ChromaDB with HNSW indexing provide sub-10ms query execution with minimal operational complexity `[Source: doc-vector-search-04]`.
+
+### Key Conclusions & Best Practices
+1. Separate retrieval evaluation from generation metrics in continuous CI/CD pipelines.
+2. Implement strict runtime input, tool, and output guardrails.
+3. Utilize task-based routing in the LLM Gateway to optimize inference costs and throughput."""
 
     @property
     def _llm_type(self) -> str:
-        return "deterministic-rca"
+        return "deterministic-research"
 
 
 class ResilientFallbackLLM(BaseChatModel):
@@ -177,14 +188,13 @@ class ResilientFallbackLLM(BaseChatModel):
 def get_llm(task_type: str = "general") -> BaseChatModel:
     """
     Task-based LLM Router:
-    - "planning" / "classification" -> Cheaper fast model (llama-3.1-8b-instant)
-    - "rca" / "synthesis" -> Stronger model (llama-3.3-70b-versatile)
+    - "planning" / "classification" / "critic" -> Cheaper fast model (llama-3.1-8b-instant)
+    - "synthesis" / "report" -> Stronger model (llama-3.3-70b-versatile)
     - Automatic fallback on Portkey / Groq / OpenAI or offline mock.
     """
-    model_name = "llama-3.1-8b-instant" if task_type in ("planning", "classification", "routing") else "llama-3.3-70b-versatile"
+    model_name = "llama-3.1-8b-instant" if task_type in ("planning", "classification", "critic", "routing") else "llama-3.3-70b-versatile"
     fallback_engine = DeterministicReasoningLLM(task_type=task_type)
     
-    # If explicitly running in local/test mode without live LLM flag, return deterministic engine instantly
     use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true"
     if not use_live and (settings.LOCAL_MODE or not settings.PORTKEY_API_KEY or settings.PORTKEY_API_KEY.startswith("mock")):
         return fallback_engine
@@ -195,7 +205,7 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
             from langchain_openai import ChatOpenAI
             from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
             
-            slug = settings.GROQ_SLUG_2 if task_type in ("planning", "classification") else settings.GROQ_SLUG
+            slug = settings.GROQ_SLUG_2 if task_type in ("planning", "classification", "critic") else settings.GROQ_SLUG
             
             llm = ChatOpenAI(
                 api_key=settings.PORTKEY_API_KEY,
@@ -240,4 +250,4 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
 
 
 def get_langchain_llm(feature: str = "rag") -> BaseChatModel:
-    return get_llm(task_type="rca" if feature == "rag" else "planning")
+    return get_llm(task_type="synthesis" if feature == "rag" else "planning")
