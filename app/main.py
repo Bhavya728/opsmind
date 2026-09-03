@@ -2,23 +2,24 @@
 OpsMind — Agentic Research & Knowledge System FastAPI Backend.
 
 Provides:
-- POST /research (Multi-agent research report generation)
+- POST /research (Multi-agent research report generation with latency tracking)
+- GET /status & GET /health (Runtime diagnostics, LLM backend, embedding backend, MCP status)
 - GET /mcp/tools (MCP Tool discovery)
 - POST /mcp/tools/execute (MCP Tool invocation)
-- GET /health (System status & dependency health)
 """
 
+import time
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
-import time
 
+from app.config import settings
 from app.agents.graph import investigate_query
 from app.tools.mcp_tools import get_mcp_tool_definitions, execute_mcp_tool
-from app.guardrails.rails import guard_input, guard_output
 from app.services.retrieval.chroma_service import chroma_service
+from app.gateway.client import get_llm_runtime_status
 from app.utils.logger import logfire
 
 
@@ -34,19 +35,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
+    )
 
 
 # Request & Response Schemas
 class ResearchRequest(BaseModel):
     query: str = Field(..., example="What are the major approaches to RAG evaluation?")
     thread_id: Optional[str] = Field(None, example="thread_abc123")
-
-
-class SourceItem(BaseModel):
-    title: str = Field(..., example="RAG Evaluation Methodologies")
-    id: str = Field(..., example="doc-rag-eval-01")
-    type: Optional[str] = Field("internal_doc", example="internal_doc")
 
 
 class ResearchResponse(BaseModel):
@@ -57,6 +52,7 @@ class ResearchResponse(BaseModel):
     tools_used: List[str]
     confidence: float
     plan: Optional[List[str]] = None
+    latencies: Optional[Dict[str, float]] = None
     guardrail_blocked: bool = False
 
 
@@ -71,25 +67,42 @@ def root():
         "system": "OpsMind — Agentic Research & Knowledge System",
         "version": "2.0.0",
         "docs_url": "/docs",
-        "health_url": "/health"
+        "health_url": "/health",
+        "status_url": "/status"
+    }
+
+
+@app.get("/status")
+def status_diagnostics():
+    """
+    Runtime diagnostics endpoint reporting exact active backends and subsystem statuses.
+    Essential for interview verification and environment introspection.
+    """
+    chroma_status = chroma_service.get_status()
+    llm_backend = get_llm_runtime_status()
+    mode = "live" if (settings.USE_LIVE_LLM and not settings.LOCAL_MODE) else "offline"
+    
+    return {
+        "status": "healthy",
+        "version": "2.0.0",
+        "mode": mode,
+        "llm_backend": llm_backend,
+        "embedding_backend": chroma_status.get("embedding_backend", "deterministic"),
+        "mcp_enabled": settings.USE_MCP_SERVER,
+        "langsmith_tracing": settings.LANGSMITH_TRACING,
+        "guardrails_enabled": settings.GUARDRAILS_ENABLED,
+        "vector_store": {
+            "collection": chroma_status.get("collection_name", "opsmind_research_kb"),
+            "document_chunks": chroma_status.get("document_count", 0),
+            "state": chroma_status.get("status", "connected")
+        }
     }
 
 
 @app.get("/health")
 def health_check():
-    """System health check verifying ChromaDB and agent availability."""
-    kb_count = chroma_service.collection.count() if chroma_service.collection else 8
-    return {
-        "status": "healthy",
-        "version": "2.0.0",
-        "components": {
-            "chroma_db": "connected",
-            "knowledge_chunks": kb_count,
-            "llm_gateway": "active",
-            "guardrails": "enforced",
-            "mcp_tools": 3
-        }
-    }
+    """System health check endpoint."""
+    return status_diagnostics()
 
 
 @app.post("/research", response_model=ResearchResponse)
@@ -116,6 +129,7 @@ def research_endpoint(req: ResearchRequest):
             tools_used=result.get("tools_used", []),
             confidence=result.get("confidence", 0.0),
             plan=result.get("plan", []),
+            latencies=result.get("latencies", {}),
             guardrail_blocked=result.get("guardrail_blocked", False)
         )
     except Exception as e:

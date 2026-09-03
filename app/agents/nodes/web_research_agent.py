@@ -3,6 +3,7 @@ Web Research Agent Node for OpsMind.
 Executes external technical web searches via MCP tool and extracts relevant snippets.
 """
 
+import time
 from typing import Dict, Any, List
 from app.agents.state import ResearchState
 from app.tools.mcp_tools import execute_mcp_tool
@@ -14,10 +15,15 @@ def web_research_node(state: ResearchState) -> Dict[str, Any]:
     Executes web searches for each sub-query determined by the Planner,
     aggregating external literature, benchmarks, and release notes.
     """
+    start_time = time.time()
+    existing_latencies = dict(state.get("latencies", {}))
+
     if not state.get("need_web", True):
         logfire.info("🌐 [Web Research Agent] Skipped by Planner decision.")
+        existing_latencies["web_research"] = 0.0
         return {
             "web_findings": [],
+            "latencies": existing_latencies,
             "current_step": "Web research skipped"
         }
 
@@ -37,11 +43,15 @@ def web_research_node(state: ResearchState) -> Dict[str, Any]:
                 findings.append(res)
                 evidence_extracted.append(f"Web Source [{res.get('title')}]: {res.get('snippet')[:180]}")
 
+    elapsed = round(time.time() - start_time, 4)
+    existing_latencies["web_research"] = elapsed
+
     return {
         "web_findings": findings,
         "observed_evidence": evidence_extracted,
+        "latencies": existing_latencies,
         "current_step": "Web research completed",
         "agents_used": ["Web Research Agent"],
         "tools_used": ["web_search"] if tools_used else [],
-        "messages": [{"role": "assistant", "content": f"Web Research Agent gathered {len(findings)} external web articles."}]
+        "messages": [{"role": "assistant", "content": f"Web Research Agent gathered {len(findings)} external web articles in {elapsed}s."}]
     }

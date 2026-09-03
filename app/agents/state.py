@@ -1,7 +1,7 @@
 """
 LangGraph Agent State definition for OpsMind Research & Knowledge System.
 Tracks research goals, planning decisions, retrieved RAG chunks, web findings,
-evidence verification, confidence, citations, and generated reports.
+evidence verification, confidence, citations, latencies, and generated reports.
 """
 
 from typing import TypedDict, List, Dict, Any, Optional, Annotated
@@ -35,6 +35,9 @@ class ResearchState(TypedDict):
     
     # Report Output
     report: str
+    
+    # Timing & Performance Tracking (per-node & total)
+    latencies: Dict[str, float]
     
     # Audit telemetry
     agents_used: Annotated[List[str], operator.add]

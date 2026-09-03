@@ -4,13 +4,16 @@ OpsMind — Agentic Research & Knowledge System Streamlit Web Interface.
 Features:
 1. Research Assistant Tab:
    - Interactive research query input
-   - Agent execution tracker & workflow telemetry
+   - Agent execution tracker & workflow telemetry with per-node latencies
    - Retrieved knowledge & web sources inspection
    - Structured grounded report with confidence score
 2. Evaluation Dashboard Tab:
-   - Automated evaluation metrics (Faithfulness, Relevance, Tool Accuracy, Guardrails)
-   - Radar charts, scorecards, and latency distribution
-   - Detailed per-test-case inspector with failure drill-downs
+   - Automated evaluation metrics (RAGAS + Custom Heuristics, Tool Accuracy, Guardrails)
+   - Scorecards, latency distribution, and failure drill-downs
+3. MCP Tool Registry:
+   - Live FastMCP tool definitions and JSON schemas
+4. Knowledge Base Inspector:
+   - ChromaDB documents and metadata inspection
 """
 
 import os
@@ -24,9 +27,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from app.config import settings
 from app.agents.graph import investigate_query
 from app.tools.mcp_tools import get_mcp_tool_definitions
 from app.services.retrieval.chroma_service import chroma_service
+from app.gateway.client import get_llm_runtime_status
 
 # Page Configuration
 st.set_page_config(
@@ -73,7 +78,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Sidebar
+# Sidebar & Diagnostics
 st.sidebar.title("🧠 OpsMind")
 st.sidebar.caption("Agentic Research & Knowledge System v2.0")
 
@@ -83,17 +88,22 @@ nav_choice = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ System Status")
-st.sidebar.success("✅ ChromaDB Vector DB: Connected")
-st.sidebar.success("✅ LLM Gateway: Multi-Tier Active")
-st.sidebar.success("✅ 3-Tier Guardrails: Enforced")
-st.sidebar.info("🤖 5 LangGraph Agents: Online")
+st.sidebar.markdown("### ⚙️ Live Runtime Diagnostics")
+
+chroma_status = chroma_service.get_status()
+llm_status = get_llm_runtime_status()
+
+st.sidebar.info(f"**LLM Backend:** `{llm_status}`")
+st.sidebar.info(f"**Embeddings:** `{chroma_status.get('embedding_backend')}`")
+st.sidebar.info(f"**MCP Server:** `FastMCP (Active)`")
+st.sidebar.info(f"**Guardrails:** `3-Tier Active`")
+st.sidebar.info(f"**LangSmith:** `{'Enabled' if settings.LANGSMITH_TRACING else 'Disabled'}`")
 
 
 # TAB 1: RESEARCH ASSISTANT
 if nav_choice == "🔬 Research Assistant":
     st.markdown('<div class="main-header">OpsMind — AI Research Assistant</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Multi-agent investigation using ChromaDB RAG, Web Research, Evidence Critique, and Runtime Guardrails.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Multi-agent investigation using ChromaDB RAG, FastMCP Tools, Evidence Critique, and Runtime Guardrails.</div>', unsafe_allow_html=True)
 
     # Preset Example Queries
     col_ex1, col_ex2, col_ex3 = st.columns(3)
@@ -127,7 +137,7 @@ if nav_choice == "🔬 Research Assistant":
         # Step 1: Input Guardrails & Planning
         status_text.markdown("🛡️ **Step 1/5:** Evaluating Input Guardrails & Formulating Query Plan...")
         progress_bar.progress(20)
-        time.sleep(0.3)
+        time.sleep(0.1)
 
         # Step 2: Retrieval
         status_text.markdown("🔍 **Step 2/5:** Querying ChromaDB Vector Store & Executing Web Research...")
@@ -136,12 +146,12 @@ if nav_choice == "🔬 Research Assistant":
         # Execute research workflow
         start_time = time.time()
         result = investigate_query(user_query)
-        latency = round(time.time() - start_time, 2)
+        latency = round(time.time() - start_time, 3)
 
         # Step 3: Evidence Critique
         status_text.markdown("⚖️ **Step 3/5:** Evidence Critic evaluating groundedness and citations...")
         progress_bar.progress(80)
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Step 4: Synthesis & Output Guardrails
         status_text.markdown("📝 **Step 4/5:** Report Generator synthesizing final research report...")
@@ -155,7 +165,7 @@ if nav_choice == "🔬 Research Assistant":
             # Metrics Banner
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Confidence Score", f"{int(result.get('confidence', 0.95)*100)}%")
-            c2.metric("Execution Latency", f"{latency}s")
+            c2.metric("Total Latency", f"{latency}s")
             c3.metric("Verified Sources", len(result.get("sources", [])))
             c4.metric("Agents Activated", len(result.get("agents_used", [])))
 
@@ -163,7 +173,7 @@ if nav_choice == "🔬 Research Assistant":
             st.markdown(result.get("answer", ""))
 
             # Collapsible Detailed Tabs
-            tab_plan, tab_sources, tab_agents = st.tabs(["🗺️ Query Plan", "📚 Verified Sources", "🤖 Agent Workflow"])
+            tab_plan, tab_sources, tab_agents, tab_lat = st.tabs(["🗺️ Query Plan", "📚 Verified Sources", "🤖 Agent Workflow", "⏱️ Node Latencies"])
             
             with tab_plan:
                 st.markdown("#### Dynamic Execution Plan")
@@ -186,6 +196,15 @@ if nav_choice == "🔬 Research Assistant":
                 st.markdown("#### Tools Executed via MCP")
                 for tl in result.get("tools_used", []):
                     st.markdown(f"- 🛠️ `{tl}`")
+
+            with tab_lat:
+                st.markdown("#### Per-Node Execution Latencies")
+                lats = result.get("latencies", {})
+                if lats:
+                    for node, dur in lats.items():
+                        st.markdown(f"- **{node}:** `{dur}s`")
+                else:
+                    st.markdown(f"Total graph latency: `{latency}s`")
 
 
 # TAB 2: EVALUATION DASHBOARD
@@ -216,26 +235,35 @@ elif nav_choice == "📊 Evaluation Dashboard":
                 st.rerun()
 
     if eval_data:
-        metrics = eval_data.get("metrics_summary", {})
+        metrics = eval_data.get("custom_heuristics_summary", eval_data.get("metrics_summary", {}))
         overall = eval_data.get("overall_score", 0.0)
         passed = eval_data.get("passed_cases", 0)
         total = eval_data.get("total_cases", 0)
+        ragas_info = eval_data.get("ragas_evaluation", {})
 
         st.markdown("---")
-        st.markdown("### 🏆 Aggregate Performance Scorecard")
+        st.markdown("### 🏆 Aggregate Performance Scorecard (Deterministic Heuristics)")
 
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Overall Score", f"{overall*100:.1f}%")
         m2.metric("Passed Cases", f"{passed}/{total}")
-        m3.metric("Faithfulness", f"{metrics.get('faithfulness', 0)*100:.1f}%")
-        m4.metric("Answer Relevance", f"{metrics.get('answer_relevance', 0)*100:.1f}%")
+        m3.metric("Faithfulness (Heur)", f"{metrics.get('faithfulness_heuristic', metrics.get('faithfulness', 0))*100:.1f}%")
+        m4.metric("Answer Relevance (Heur)", f"{metrics.get('answer_relevance_heuristic', metrics.get('answer_relevance', 0))*100:.1f}%")
         m5.metric("Guardrail Accuracy", f"{metrics.get('guardrail_accuracy', 0)*100:.1f}%")
 
         m6, m7, m8, m9 = st.columns(4)
-        m6.metric("Context Relevance", f"{metrics.get('context_relevance', 0)*100:.1f}%")
+        m6.metric("Context Relevance (Heur)", f"{metrics.get('context_relevance_heuristic', metrics.get('context_relevance', 0))*100:.1f}%")
         m7.metric("Tool Selection Accuracy", f"{metrics.get('tool_selection_accuracy', 0)*100:.1f}%")
         m8.metric("Citation Compliance", f"{metrics.get('citation_compliance', 0)*100:.1f}%")
         m9.metric("Avg Latency", f"{metrics.get('average_latency_sec', 0)}s")
+
+        # RAGAS status banner
+        st.markdown("### 📊 Official RAGAS Evaluation Status")
+        if ragas_info.get("status") == "completed":
+            st.success("✅ RAGAS LLM-Assisted Evaluation Completed!")
+            st.json(ragas_info.get("metrics", {}))
+        else:
+            st.info(f"ℹ️ **RAGAS Status:** `{ragas_info.get('status', 'unavailable_offline')}` — {ragas_info.get('message', 'Requires live LLM credentials.')}")
 
         st.markdown("---")
         st.markdown("### 🔍 Test Case Inspector & Failure Drill-Down")
@@ -252,6 +280,7 @@ elif nav_choice == "📊 Evaluation Dashboard":
                 continue
 
             status_icon = "✅ PASS" if c.get("passed") else "❌ FAIL"
+            heur = c.get("custom_heuristics", {})
             with st.expander(f"{status_icon} | Case #{c.get('id')}: {c.get('question')[:80]}..."):
                 c_col1, c_col2 = st.columns(2)
                 with c_col1:
@@ -260,8 +289,8 @@ elif nav_choice == "📊 Evaluation Dashboard":
                     st.write(f"**Latency:** `{c.get('latency_seconds')}s`")
                     st.write(f"**Estimated Tokens:** `{c.get('estimated_tokens')}`")
                 with c_col2:
-                    st.write(f"**Faithfulness:** `{c.get('faithfulness')}`")
-                    st.write(f"**Answer Relevance:** `{c.get('answer_relevance')}`")
+                    st.write(f"**Faithfulness (Heur):** `{heur.get('faithfulness', c.get('faithfulness'))}`")
+                    st.write(f"**Answer Relevance (Heur):** `{heur.get('answer_relevance', c.get('answer_relevance'))}`")
                     st.write(f"**Guardrail Score:** `{c.get('guardrail_score')}`")
                     st.write(f"**Tool Score:** `{c.get('tool_selection_score')}`")
 
@@ -274,7 +303,7 @@ elif nav_choice == "📊 Evaluation Dashboard":
 # TAB 3: MCP TOOL REGISTRY
 elif nav_choice == "🛠️ MCP Tool Registry":
     st.markdown('<div class="main-header">Model Context Protocol (MCP) Registry</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Standardized JSON tool schemas for agent tool discovery and secure parameter validation.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Standardized JSON tool schemas for agent tool discovery and secure parameter validation via official FastMCP.</div>', unsafe_allow_html=True)
 
     tools = get_mcp_tool_definitions()
     for t in tools:

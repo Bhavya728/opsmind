@@ -1,6 +1,12 @@
 """
 OpsMind Automated Evaluation Pipeline.
-Executes the golden dataset across RAG, Agent/Tool, and Guardrail evaluation metrics.
+Executes the golden dataset across:
+A. Actual RAGAS Framework Metrics (Faithfulness, Answer Relevancy, Context Precision, Context Recall)
+B. Custom Heuristic Metrics (Faithfulness, Answer Relevance, Context Relevance, Context Recall)
+C. Agent Tool Selection Accuracy
+D. Guardrail Decision Accuracy
+E. Citation Compliance
+
 Saves comprehensive results to evals/evaluation_results.json.
 """
 
@@ -15,17 +21,18 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from app.config import settings
 from app.agents.graph import investigate_query
 from app.services.retrieval.chroma_service import chroma_service
 from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS, WEB_KNOWLEDGE_INDEX
 from evals.metrics import (
-    calculate_faithfulness,
-    calculate_answer_relevance,
-    calculate_context_relevance,
-    calculate_context_recall,
-    evaluate_tool_selection,
-    evaluate_guardrail_decision,
-    evaluate_citations_presence
+    custom_faithfulness_heuristic,
+    custom_answer_relevance_heuristic,
+    custom_context_relevance_heuristic,
+    custom_context_recall_heuristic,
+    custom_tool_selection_accuracy,
+    custom_guardrail_accuracy,
+    custom_citation_compliance
 )
 from app.utils.logger import logfire
 
@@ -63,8 +70,69 @@ def _resolve_context_texts(sources: List[Dict[str, Any]]) -> List[str]:
     return context_chunks
 
 
+def run_ragas_evaluation_if_available(eval_samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Executes real RAGAS evaluation using the official ragas package if live LLM is configured.
+    Does NOT fabricate scores when live LLM credentials are unavailable.
+    """
+    use_live_llm = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
+    has_keys = bool(settings.GROQ_API_KEY or settings.PORTKEY_API_KEY)
+    
+    if not use_live_llm or not has_keys:
+        return {
+            "status": "unavailable_offline",
+            "message": "Actual RAGAS LLM-assisted evaluation requires USE_LIVE_LLM=true and a valid GROQ_API_KEY / PORTKEY_API_KEY. Custom deterministic heuristics executed successfully.",
+            "metrics": {
+                "faithfulness": None,
+                "answer_relevancy": None,
+                "context_precision": None,
+                "context_recall": None
+            }
+        }
+
+    try:
+        from ragas import evaluate
+        from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
+        from datasets import Dataset
+
+        data_dict = {
+            "user_input": [s["question"] for s in eval_samples],
+            "response": [s["answer"] for s in eval_samples],
+            "retrieved_contexts": [s["contexts"] for s in eval_samples],
+            "reference": [s["reference"] for s in eval_samples]
+        }
+        dataset = Dataset.from_dict(data_dict)
+        
+        logfire.info("📊 Running official RAGAS evaluation on dataset...")
+        results = evaluate(
+            dataset=dataset,
+            metrics=[faithfulness, answer_relevancy, context_precision, context_recall]
+        )
+        return {
+            "status": "completed",
+            "metrics": {
+                "faithfulness": round(float(results.get("faithfulness", 0.0)), 3),
+                "answer_relevancy": round(float(results.get("answer_relevancy", 0.0)), 3),
+                "context_precision": round(float(results.get("context_precision", 0.0)), 3),
+                "context_recall": round(float(results.get("context_recall", 0.0)), 3)
+            }
+        }
+    except Exception as e:
+        logfire.warning(f"⚠️ RAGAS evaluation run note: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "metrics": {
+                "faithfulness": None,
+                "answer_relevancy": None,
+                "context_precision": None,
+                "context_recall": None
+            }
+        }
+
+
 def evaluate_single_query(question: str, expected_evidence: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Evaluates a single research query and returns calculated metrics."""
+    """Evaluates a single research query and returns calculated custom heuristic metrics."""
     start_time = time.time()
     output = investigate_query(question)
     latency = round(time.time() - start_time, 3)
@@ -73,20 +141,22 @@ def evaluate_single_query(question: str, expected_evidence: Optional[List[str]] 
     sources = output.get("sources", [])
     context_texts = _resolve_context_texts(sources)
     
-    faith_score = calculate_faithfulness(answer, context_texts)
-    ans_rel_score = calculate_answer_relevance(question, answer)
-    ctx_rel_score = calculate_context_relevance(question, context_texts)
-    cite_score = evaluate_citations_presence(answer)
+    faith_score = custom_faithfulness_heuristic(answer, context_texts)
+    ans_rel_score = custom_answer_relevance_heuristic(question, answer)
+    ctx_rel_score = custom_context_relevance_heuristic(question, context_texts)
+    cite_score = custom_citation_compliance(answer)
     
     return {
         "question": question,
         "answer": answer,
         "sources": sources,
         "latency_seconds": latency,
-        "faithfulness": faith_score,
-        "answer_relevance": ans_rel_score,
-        "context_relevance": ctx_rel_score,
-        "citation_score": cite_score,
+        "custom_heuristics": {
+            "faithfulness": faith_score,
+            "answer_relevance": ans_rel_score,
+            "context_relevance": ctx_rel_score,
+            "citation_compliance": cite_score
+        },
         "confidence": output.get("confidence", 0.0)
     }
 
@@ -110,6 +180,8 @@ def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS
     citation_scores = []
     latencies = []
     total_tokens_estimated = 0
+
+    ragas_samples_payload = []
 
     for idx, sample in enumerate(samples):
         q_id = sample.get("id", idx + 1)
@@ -146,20 +218,20 @@ def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS
         tokens = int(len(question.split()) * 1.3 + len(actual_answer.split()) * 1.3 + 450)
         total_tokens_estimated += tokens
 
-        guard_score = evaluate_guardrail_decision(expected_blocked, actual_blocked)
+        guard_score = custom_guardrail_accuracy(expected_blocked, actual_blocked)
         guardrail_accuracy_scores.append(guard_score)
 
-        tool_score = evaluate_tool_selection(expected_tools, actual_tools)
+        tool_score = custom_tool_selection_accuracy(expected_tools, actual_tools)
         tool_accuracy_scores.append(tool_score)
 
         if not expected_blocked and not actual_blocked:
             context_texts = _resolve_context_texts(actual_sources)
             
-            faith_score = calculate_faithfulness(actual_answer, context_texts)
-            ans_rel_score = calculate_answer_relevance(question, actual_answer)
-            ctx_rel_score = calculate_context_relevance(question, context_texts)
-            ctx_rec_score = calculate_context_recall(expected_evidence, context_texts)
-            cite_score = evaluate_citations_presence(actual_answer)
+            faith_score = custom_faithfulness_heuristic(actual_answer, context_texts)
+            ans_rel_score = custom_answer_relevance_heuristic(question, actual_answer)
+            ctx_rel_score = custom_context_relevance_heuristic(question, context_texts)
+            ctx_rec_score = custom_context_recall_heuristic(expected_evidence, context_texts)
+            cite_score = custom_citation_compliance(actual_answer)
 
             rag_faithfulness_scores.append(faith_score)
             rag_answer_rel_scores.append(ans_rel_score)
@@ -168,6 +240,13 @@ def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS
             citation_scores.append(cite_score)
             
             case_passed = (faith_score >= 0.70 and ans_rel_score >= 0.70 and guard_score == 1.0)
+            
+            ragas_samples_payload.append({
+                "question": question,
+                "answer": actual_answer,
+                "contexts": context_texts if context_texts else ["Context unavailable."],
+                "reference": " ".join(expected_evidence) if expected_evidence else "Technical ground truth."
+            })
         else:
             faith_score = 1.0
             ans_rel_score = 1.0
@@ -186,11 +265,13 @@ def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS
             "estimated_tokens": tokens,
             "guardrail_score": guard_score,
             "tool_selection_score": tool_score,
-            "faithfulness": faith_score,
-            "answer_relevance": ans_rel_score,
-            "context_relevance": ctx_rel_score,
-            "context_recall": ctx_rec_score,
-            "citation_score": cite_score,
+            "custom_heuristics": {
+                "faithfulness": faith_score,
+                "answer_relevance": ans_rel_score,
+                "context_relevance": ctx_rel_score,
+                "context_recall": ctx_rec_score,
+                "citation_compliance": cite_score
+            },
             "actual_answer_snippet": actual_answer[:220] + "..." if len(actual_answer) > 220 else actual_answer,
             "actual_sources": actual_sources,
             "agents_used": output.get("agents_used", []),
@@ -218,17 +299,21 @@ def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS
         3
     )
 
+    # Execute official RAGAS if enabled
+    ragas_report = run_ragas_evaluation_if_available(ragas_samples_payload)
+
     evaluation_report = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "total_cases": total_samples,
         "passed_cases": passed_cases,
         "failed_cases": total_samples - passed_cases,
         "overall_score": overall_score,
-        "metrics_summary": {
-            "faithfulness": avg_faithfulness,
-            "answer_relevance": avg_answer_relevance,
-            "context_relevance": avg_context_relevance,
-            "context_recall": avg_context_recall,
+        "ragas_evaluation": ragas_report,
+        "custom_heuristics_summary": {
+            "faithfulness_heuristic": avg_faithfulness,
+            "answer_relevance_heuristic": avg_answer_relevance,
+            "context_relevance_heuristic": avg_context_relevance,
+            "context_recall_heuristic": avg_context_recall,
             "tool_selection_accuracy": avg_tool_accuracy,
             "guardrail_accuracy": avg_guardrail_accuracy,
             "citation_compliance": avg_citation_score,
@@ -257,12 +342,13 @@ if __name__ == "__main__":
     print("="*50)
     print(f"Overall Score:            {report['overall_score']*100:.1f}%")
     print(f"Passed Test Cases:        {report['passed_cases']}/{report['total_cases']}")
-    print(f"Faithfulness:             {report['metrics_summary']['faithfulness']*100:.1f}%")
-    print(f"Answer Relevance:         {report['metrics_summary']['answer_relevance']*100:.1f}%")
-    print(f"Context Relevance:        {report['metrics_summary']['context_relevance']*100:.1f}%")
-    print(f"Context Recall:           {report['metrics_summary']['context_recall']*100:.1f}%")
-    print(f"Tool Accuracy:            {report['metrics_summary']['tool_selection_accuracy']*100:.1f}%")
-    print(f"Guardrail Accuracy:       {report['metrics_summary']['guardrail_accuracy']*100:.1f}%")
-    print(f"Citation Compliance:      {report['metrics_summary']['citation_compliance']*100:.1f}%")
-    print(f"Average Latency:          {report['metrics_summary']['average_latency_sec']}s")
+    print(f"Faithfulness (Heuristic): {report['custom_heuristics_summary']['faithfulness_heuristic']*100:.1f}%")
+    print(f"Answer Relevance (Heur):  {report['custom_heuristics_summary']['answer_relevance_heuristic']*100:.1f}%")
+    print(f"Context Relevance (Heur): {report['custom_heuristics_summary']['context_relevance_heuristic']*100:.1f}%")
+    print(f"Context Recall (Heur):    {report['custom_heuristics_summary']['context_recall_heuristic']*100:.1f}%")
+    print(f"Tool Selection Accuracy:  {report['custom_heuristics_summary']['tool_selection_accuracy']*100:.1f}%")
+    print(f"Guardrail Accuracy:       {report['custom_heuristics_summary']['guardrail_accuracy']*100:.1f}%")
+    print(f"Citation Compliance:      {report['custom_heuristics_summary']['citation_compliance']*100:.1f}%")
+    print(f"Average Latency:          {report['custom_heuristics_summary']['average_latency_sec']}s")
+    print(f"RAGAS Status:             {report['ragas_evaluation']['status']}")
     print("="*50)

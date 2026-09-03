@@ -1,6 +1,6 @@
 """
 Standalone Test Runner for OpsMind Agentic Research & Knowledge System.
-Executes all unit, integration, guardrail, gateway, RAG, and API tests.
+Executes all unit, integration, guardrail, gateway, MCP, RAG, evaluation, and API tests.
 """
 
 import sys
@@ -26,6 +26,7 @@ def run_all_tests():
         ("MCP Tools & Protocol Discovery", "tests.test_mcp_tools"),
         ("ChromaDB RAG Pipeline & Embeddings", "tests.test_rag_pipeline"),
         ("LangGraph 5-Agent Research Workflow", "tests.test_agent_graph"),
+        ("RAGAS Evaluation & Custom Metrics", "tests.test_evals_ragas"),
         ("FastAPI Backend Endpoints", "tests.test_api"),
     ]
 

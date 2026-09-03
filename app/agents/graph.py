@@ -4,13 +4,14 @@ LangGraph Multi-Agent Orchestration Graph for OpsMind Research & Knowledge Syste
 Workflow:
 1. Input Guardrail Verification
 2. Query Planner (Deconstruction & Routing)
-3. Web Research Agent (External Search)
-4. Knowledge / RAG Agent (ChromaDB Dense Retrieval)
+3. Web Research Agent (External Search via MCP)
+4. Knowledge / RAG Agent (ChromaDB Dense Retrieval via MCP)
 5. Evidence / Critic Agent (Groundedness & Citation Verification)
 6. Report Generation Agent (Structured Synthesis)
 7. Output Guardrail Redaction
 """
 
+import time
 from typing import Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 
@@ -54,11 +55,15 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
     """
     Primary orchestration entry point for researching a query.
     Enforces Input Guardrails -> Multi-Agent LangGraph -> Output Guardrails.
+    Measures per-agent node latencies and total execution runtime.
     """
+    start_total_time = time.time()
+
     # 1. Gate 1: Input Guardrail Check
     is_blocked, block_reason = guard_input(query)
     if is_blocked:
         logfire.warning(f"🛡️ Query blocked at input guardrail: {block_reason}")
+        total_time = round(time.time() - start_total_time, 4)
         return {
             "query": query,
             "answer": block_reason,
@@ -67,6 +72,7 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
             "tools_used": [],
             "confidence": 0.0,
             "plan": ["Input Safety Evaluation: Blocked"],
+            "latencies": {"guardrail": total_time, "total": total_time},
             "guardrail_blocked": True,
             "guardrail_response": block_reason
         }
@@ -90,6 +96,7 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
         "confidence": 0.0,
         "critic_notes": "",
         "report": "",
+        "latencies": {},
         "agents_used": [],
         "tools_used": [],
         "guardrail_blocked": False,
@@ -101,12 +108,19 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
     # 3. Execute LangGraph
     try:
         final_state = research_graph.invoke(initial_state)
+        total_time = round(time.time() - start_total_time, 4)
         
         if final_state.get("final_output"):
             output = final_state["final_output"]
             output["guardrail_blocked"] = False
+            if "latencies" not in output:
+                output["latencies"] = final_state.get("latencies", {})
+            output["latencies"]["total"] = total_time
             return output
             
+        latencies = final_state.get("latencies", {})
+        latencies["total"] = total_time
+
         return {
             "query": query,
             "answer": final_state.get("report", "Research completed."),
@@ -115,9 +129,11 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
             "tools_used": list(set(final_state.get("tools_used", []))),
             "confidence": final_state.get("confidence", 0.90),
             "plan": final_state.get("plan", []),
+            "latencies": latencies,
             "guardrail_blocked": False
         }
     except Exception as e:
+        total_time = round(time.time() - start_total_time, 4)
         logfire.error(f"❌ LangGraph execution failed: {e}")
         return {
             "query": query,
@@ -127,6 +143,7 @@ def investigate_query(query: str, thread_id: Optional[str] = None) -> Dict[str, 
             "tools_used": [],
             "confidence": 0.0,
             "plan": [],
+            "latencies": {"total": total_time, "error": total_time},
             "guardrail_blocked": False
         }
 

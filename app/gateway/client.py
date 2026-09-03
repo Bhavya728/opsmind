@@ -2,11 +2,11 @@
 LLM Gateway Module with Portkey Integration and Multi-Tier Task-Based Routing.
 
 Architecture:
-- Portkey Gateway with fallback strategy (@rag/llama-3.3-70b -> @brag/llama-3.1-8b)
+- Portkey Gateway with fallback strategy (@research/llama-3.3-70b-versatile -> @fast/llama-3.1-8b-instant)
 - Task-based model tier selection:
   * "planning" / "classification" / "critic" -> Fast / Cheaper Model (llama-3.1-8b-instant)
   * "synthesis" / "report" / "general" -> Strong Model (llama-3.3-70b-versatile)
-- Resilient fallback chain: Portkey -> Direct Groq -> Direct OpenAI -> High-Fidelity Deterministic Reasoning Engine
+- Resilient fallback chain: Portkey Gateway -> Direct Groq -> Deterministic Reasoning Engine
 """
 
 import os
@@ -35,7 +35,7 @@ GATEWAY_CONFIG = {
     ]
 }
 
-# Optional portkey client instance
+# Optional direct portkey client instance
 try:
     from portkey_ai import Portkey
     portkey_client = Portkey(api_key=settings.PORTKEY_API_KEY, config=GATEWAY_CONFIG) if settings.PORTKEY_API_KEY else None
@@ -44,6 +44,7 @@ except Exception:
 
 
 def extract_cache_status(response) -> str:
+    """Extract Portkey semantic cache header status."""
     for attr in ("_raw_response", "_response", "_http_response"):
         raw = getattr(response, attr, None)
         if raw is not None:
@@ -171,18 +172,32 @@ class ResilientFallbackLLM(BaseChatModel):
     primary_llm: Optional[BaseChatModel] = None
     fallback_llm: BaseChatModel
     task_type: str = "general"
+    active_backend: str = "deterministic"
 
     def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, **kwargs) -> Any:
         if self.primary_llm is not None:
             try:
-                return self.primary_llm._generate(messages, stop=stop, **kwargs)
+                res = self.primary_llm._generate(messages, stop=stop, **kwargs)
+                return res
             except Exception as e:
-                logfire.warning(f"⚠️ Primary LLM call failed ({e}). Seamlessly switching to deterministic fallback.")
+                logfire.warning(f"⚠️ Primary LLM call failed ({e}). Switching to deterministic fallback.")
         return self.fallback_llm._generate(messages, stop=stop, **kwargs)
 
     @property
     def _llm_type(self) -> str:
-        return "resilient-fallback"
+        return f"resilient-fallback({self.active_backend})"
+
+
+def get_llm_runtime_status() -> str:
+    """Return name of active LLM backend."""
+    use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
+    if not use_live:
+        return "deterministic"
+    if settings.PORTKEY_API_KEY and not settings.PORTKEY_API_KEY.startswith("mock"):
+        return "portkey"
+    if settings.GROQ_API_KEY and not settings.GROQ_API_KEY.startswith("mock"):
+        return "groq"
+    return "deterministic"
 
 
 def get_llm(task_type: str = "general") -> BaseChatModel:
@@ -190,13 +205,13 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
     Task-based LLM Router:
     - "planning" / "classification" / "critic" -> Cheaper fast model (llama-3.1-8b-instant)
     - "synthesis" / "report" -> Stronger model (llama-3.3-70b-versatile)
-    - Automatic fallback on Portkey / Groq / OpenAI or offline mock.
+    - Automatic fallback chain: Portkey Gateway -> Direct Groq -> Deterministic offline engine.
     """
     model_name = "llama-3.1-8b-instant" if task_type in ("planning", "classification", "critic", "routing") else "llama-3.3-70b-versatile"
     fallback_engine = DeterministicReasoningLLM(task_type=task_type)
     
-    use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true"
-    if not use_live and (settings.LOCAL_MODE or not settings.PORTKEY_API_KEY or settings.PORTKEY_API_KEY.startswith("mock")):
+    use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
+    if not use_live:
         return fallback_engine
 
     # 1. Try Portkey Gateway if key is present
@@ -224,9 +239,9 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
                 )
             )
             logfire.info(f"🌐 LLM Gateway: Routing task '{task_type}' via Portkey Gateway (@{slug}/{model_name})")
-            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, task_type=task_type)
+            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, task_type=task_type, active_backend="portkey")
         except Exception as e:
-            logfire.warning(f"⚠️ Portkey Gateway init failed: {e}. Trying direct Groq client.")
+            logfire.warning(f"⚠️ Portkey Gateway init note: {e}. Trying direct Groq client.")
 
     # 2. Try direct ChatGroq
     if settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip() and not settings.GROQ_API_KEY.startswith("mock"):
@@ -240,9 +255,9 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
                 max_retries=1
             )
             logfire.info(f"⚡ LLM Gateway: Direct Groq client for '{task_type}' ({model_name})")
-            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, task_type=task_type)
+            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, task_type=task_type, active_backend="groq")
         except Exception as e:
-            logfire.warning(f"⚠️ Groq direct client failed: {e}. Trying fallback.")
+            logfire.warning(f"⚠️ Groq direct client note: {e}. Trying fallback.")
 
     # 3. Fallback to high-fidelity deterministic reasoning model
     logfire.info(f"🛡️ LLM Gateway: Using deterministic offline reasoning engine for '{task_type}'")

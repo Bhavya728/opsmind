@@ -5,6 +5,7 @@ checks factual consistency, scores confidence, and prepares verified source cita
 """
 
 import json
+import time
 from typing import Dict, Any, List
 from app.agents.state import ResearchState
 from app.gateway.client import get_llm
@@ -16,9 +17,11 @@ def evidence_critic_node(state: ResearchState) -> Dict[str, Any]:
     Critiques and filters collected research evidence.
     Ensures findings are grounded, non-contradictory, and accurately attributed.
     """
+    start_time = time.time()
     query = state.get("query", "")
     rag_findings = state.get("rag_findings", [])
     web_findings = state.get("web_findings", [])
+    existing_latencies = dict(state.get("latencies", {}))
     
     logfire.info(f"🔍 [Evidence Critic Agent] Evaluating {len(rag_findings)} RAG chunks & {len(web_findings)} Web findings.")
     
@@ -85,12 +88,16 @@ Output JSON:
         confidence = 0.50
         critic_notes = "Warning: No direct knowledge documents or web evidence found."
 
+    elapsed = round(time.time() - start_time, 4)
+    existing_latencies["critic"] = elapsed
+
     return {
         "verified_sources": verified_sources,
         "critic_score": confidence,
         "confidence": confidence,
         "critic_notes": critic_notes,
+        "latencies": existing_latencies,
         "current_step": "Evidence critique completed",
         "agents_used": ["Evidence Critic Agent"],
-        "messages": [{"role": "assistant", "content": f"Evidence Critic validated {len(verified_sources)} source citations with {int(confidence*100)}% confidence."}]
+        "messages": [{"role": "assistant", "content": f"Evidence Critic validated {len(verified_sources)} source citations with {int(confidence*100)}% confidence in {elapsed}s."}]
     }

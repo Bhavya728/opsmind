@@ -1,12 +1,14 @@
 """
 ChromaDB Retrieval Service with Hugging Face Embeddings for OpsMind.
 Provides semantic vector search, document indexing, and similarity ranking.
+Supports both real Hugging Face SentenceTransformer embeddings and deterministic offline embeddings.
 """
 
 import os
 import math
 import hashlib
 from typing import List, Dict, Any, Optional
+from app.config import settings
 from app.utils.logger import logfire
 from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS
 
@@ -39,7 +41,7 @@ class DeterministicEmbeddingFunction:
                 vec[pos] += val * (1.0 / (1.0 + math.log(idx + 1)))
             
             norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-            vec = [x / norm for x in vec]
+            vec = [float(x / norm) for x in vec]
             embeddings.append(vec)
         return embeddings
 
@@ -50,21 +52,81 @@ class DeterministicEmbeddingFunction:
         return self([input])[0]
 
 
+class HuggingFaceSentenceTransformerEmbeddingFunction:
+    """
+    Real Hugging Face SentenceTransformer embedding function using all-MiniLM-L6-v2.
+    Produces dense 384-dimensional semantic embeddings.
+    """
+    def name(self) -> str:
+        return "sentence-transformers/all-MiniLM-L6-v2"
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: Optional[str] = None):
+        self.model_name = model_name
+        self.device = device
+        self._model = None
+        self._init_model()
+
+    def _init_model(self):
+        try:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_name, device=self.device)
+            logfire.info(f"🤗 Hugging Face SentenceTransformer initialized with model: '{self.model_name}'")
+        except Exception as e:
+            logfire.error(f"❌ Failed to load SentenceTransformer model '{self.model_name}': {e}")
+            raise
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        if isinstance(input, str):
+            input = [input]
+        if self._model is None:
+            self._init_model()
+        
+        raw_embeddings = self._model.encode(input, convert_to_numpy=True, normalize_embeddings=True)
+        return [vec.tolist() for vec in raw_embeddings]
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return self(texts)
+
+    def embed_query(self, input: str) -> List[float]:
+        return self([input])[0]
+
+
+def get_embedding_function(force_deterministic: Optional[bool] = None):
+    """
+    Factory to return the active embedding function based on configuration.
+    USE_DETERMINISTIC_MODE=true  -> DeterministicEmbeddingFunction
+    USE_DETERMINISTIC_MODE=false -> HuggingFaceSentenceTransformerEmbeddingFunction
+    """
+    use_deterministic = force_deterministic if force_deterministic is not None else settings.USE_DETERMINISTIC_MODE
+    
+    if use_deterministic:
+        return DeterministicEmbeddingFunction(dim=384), "deterministic"
+    
+    try:
+        embed_fn = HuggingFaceSentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        return embed_fn, "sentence-transformers/all-MiniLM-L6-v2"
+    except Exception as e:
+        logfire.warning(f"⚠️ HuggingFace SentenceTransformer unavailable ({e}). Falling back to deterministic embeddings.")
+        return DeterministicEmbeddingFunction(dim=384), "deterministic"
+
+
 class ChromaService:
     """ChromaDB Vector Store management for technical knowledge retrieval."""
     
     _instance = None
 
-    def __init__(self, persist_directory: Optional[str] = None):
-        self.persist_dir = persist_directory or CHROMA_DIR
+    def __init__(self, persist_directory: Optional[str] = None, force_deterministic: Optional[bool] = None):
+        self.persist_dir = persist_directory or settings.CHROMA_PERSIST_DIR or CHROMA_DIR
         os.makedirs(self.persist_dir, exist_ok=True)
-        self.collection_name = "opsmind_research_kb"
+        self.collection_name = settings.CHROMA_COLLECTION
+        self._force_deterministic = force_deterministic
+        self.embedding_fn, self.embedding_backend = get_embedding_function(force_deterministic)
         self._init_client_and_collection()
 
     @classmethod
-    def get_instance(cls):
+    def get_instance(cls, force_deterministic: Optional[bool] = None):
         if cls._instance is None:
-            cls._instance = ChromaService()
+            cls._instance = ChromaService(force_deterministic=force_deterministic)
         return cls._instance
 
     def _init_client_and_collection(self):
@@ -77,7 +139,6 @@ class ChromaService:
                 settings=Settings(anonymized_telemetry=False, allow_reset=True)
             )
             
-            self.embedding_fn = DeterministicEmbeddingFunction()
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
                 embedding_function=self.embedding_fn,
@@ -86,12 +147,11 @@ class ChromaService:
             
             if self.collection.count() == 0:
                 self._seed_knowledge_base()
-            logfire.info(f"📚 ChromaDB initialized with {self.collection.count()} document chunks.")
+            logfire.info(f"📚 ChromaDB initialized with {self.collection.count()} document chunks. Active embedding backend: {self.embedding_backend}")
         except Exception as e:
             logfire.warning(f"⚠️ ChromaDB native client init note: {e}")
             self.client = None
             self.collection = None
-            self.embedding_fn = DeterministicEmbeddingFunction()
 
     def _seed_knowledge_base(self):
         """Index the knowledge documents into ChromaDB with chunking."""
@@ -119,12 +179,15 @@ class ChromaService:
                 })
 
         if documents and self.collection:
-            self.collection.add(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas
-            )
-            logfire.info(f"✅ Ingested {len(documents)} chunks from {len(KNOWLEDGE_DOCUMENTS)} documents into ChromaDB.")
+            try:
+                self.collection.add(
+                    ids=ids,
+                    documents=documents,
+                    metadatas=metadatas
+                )
+                logfire.info(f"✅ Ingested {len(documents)} chunks from {len(KNOWLEDGE_DOCUMENTS)} documents into ChromaDB.")
+            except Exception as e:
+                logfire.warning(f"⚠️ Chroma add note: {e}")
 
     def query(self, query_text: str, n_results: int = 3, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Perform semantic similarity search on ChromaDB."""
@@ -198,6 +261,17 @@ class ChromaService:
             if doc["id"] == doc_id:
                 return doc
         return None
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return runtime ChromaDB and embedding status."""
+        count = self.collection.count() if self.collection else len(KNOWLEDGE_DOCUMENTS)
+        return {
+            "status": "connected" if self.collection else "fallback",
+            "collection_name": self.collection_name,
+            "document_count": count,
+            "embedding_backend": self.embedding_backend,
+            "persist_dir": self.persist_dir
+        }
 
 
 # Global singleton instance

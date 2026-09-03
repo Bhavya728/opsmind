@@ -3,6 +3,7 @@ Report Generator Agent Node for OpsMind.
 Synthesizes verified evidence into a production-grade, structured, and cited research report.
 """
 
+import time
 from typing import Dict, Any, List
 from app.agents.state import ResearchState
 from app.gateway.client import get_llm
@@ -15,11 +16,13 @@ def report_generator_node(state: ResearchState) -> Dict[str, Any]:
     Synthesizes research findings from ChromaDB RAG and Web research
     into a comprehensive technical report with explicit markdown citations.
     """
+    start_time = time.time()
     query = state.get("query", "")
     rag_findings = state.get("rag_findings", [])
     web_findings = state.get("web_findings", [])
     verified_sources = state.get("verified_sources", [])
     confidence = state.get("confidence", 0.90)
+    existing_latencies = dict(state.get("latencies", {}))
     
     logfire.info(f"📝 [Report Generator Agent] Synthesizing final research report for: '{query[:50]}'")
     
@@ -74,6 +77,11 @@ Production LLM systems require multi-agent workflows, vector retrieval, runtime 
         for s in verified_sources
     ]
 
+    synthesis_elapsed = round(time.time() - start_time, 4)
+    existing_latencies["synthesis"] = synthesis_elapsed
+    total_elapsed = round(sum(v for k, v in existing_latencies.items() if k != "total"), 4)
+    existing_latencies["total"] = total_elapsed
+
     final_payload = {
         "query": query,
         "answer": clean_report,
@@ -81,13 +89,15 @@ Production LLM systems require multi-agent workflows, vector retrieval, runtime 
         "agents_used": ["Query Planner", "Web Research Agent", "Knowledge RAG Agent", "Evidence Critic Agent", "Report Generator Agent"],
         "tools_used": list(set(state.get("tools_used", ["knowledge_search", "web_search"]))),
         "confidence": confidence,
+        "latencies": existing_latencies,
         "plan": state.get("plan", [])
     }
 
     return {
         "report": clean_report,
         "final_output": final_payload,
+        "latencies": existing_latencies,
         "current_step": "Research complete",
         "agents_used": ["Report Generator Agent"],
-        "messages": [{"role": "assistant", "content": "Report Generator produced final grounded research report."}]
+        "messages": [{"role": "assistant", "content": f"Report Generator produced final grounded research report in {synthesis_elapsed}s."}]
     }

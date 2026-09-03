@@ -1,9 +1,9 @@
 """
 Unit Tests for LLM Gateway & Task-Based Routing Module.
-Tests model tier selection, fallback reasoning, and error resilience.
+Tests model tier selection, fallback reasoning, runtime status, and error resilience.
 """
 
-from app.gateway.client import get_llm, DeterministicReasoningLLM, ResilientFallbackLLM
+from app.gateway.client import get_llm, DeterministicReasoningLLM, ResilientFallbackLLM, get_llm_runtime_status
 
 
 def test_gateway_planner_model_tier():
@@ -39,3 +39,9 @@ def test_deterministic_reasoning_fallback_engine():
     res = engine.invoke("What are LLM gateways?")
     assert len(res.content) > 100
     assert "LLM" in res.content
+
+
+def test_gateway_runtime_status():
+    """Test gateway status reports accurate active backend."""
+    status = get_llm_runtime_status()
+    assert status in ("deterministic", "groq", "portkey")

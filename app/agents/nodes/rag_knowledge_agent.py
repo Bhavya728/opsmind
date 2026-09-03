@@ -1,8 +1,9 @@
 """
 Knowledge / RAG Agent Node for OpsMind.
-Performs semantic retrieval across ChromaDB internal vector store using HuggingFace embeddings.
+Performs semantic retrieval across ChromaDB internal vector store using HuggingFace / deterministic embeddings.
 """
 
+import time
 from typing import Dict, Any, List
 from app.agents.state import ResearchState
 from app.tools.mcp_tools import execute_mcp_tool
@@ -13,10 +14,15 @@ def rag_knowledge_node(state: ResearchState) -> Dict[str, Any]:
     """
     Retrieves internal technical documents from ChromaDB based on planner search queries.
     """
+    start_time = time.time()
+    existing_latencies = dict(state.get("latencies", {}))
+
     if not state.get("need_rag", True):
         logfire.info("📚 [RAG Knowledge Agent] Skipped by Planner decision.")
+        existing_latencies["rag"] = 0.0
         return {
             "rag_findings": [],
+            "latencies": existing_latencies,
             "current_step": "RAG retrieval skipped"
         }
 
@@ -43,11 +49,15 @@ def rag_knowledge_node(state: ResearchState) -> Dict[str, Any]:
                     findings.append(chunk)
                     evidence_extracted.append(f"Internal Doc [{chunk.get('title')} - {chunk.get('doc_id')}]: {chunk.get('content')[:200]}")
 
+    elapsed = round(time.time() - start_time, 4)
+    existing_latencies["rag"] = elapsed
+
     return {
         "rag_findings": findings,
         "observed_evidence": evidence_extracted,
+        "latencies": existing_latencies,
         "current_step": "RAG retrieval completed",
         "agents_used": ["Knowledge RAG Agent"],
         "tools_used": ["knowledge_search"] if tools_used else [],
-        "messages": [{"role": "assistant", "content": f"RAG Knowledge Agent retrieved {len(findings)} relevant knowledge chunks."}]
+        "messages": [{"role": "assistant", "content": f"RAG Knowledge Agent retrieved {len(findings)} relevant knowledge chunks in {elapsed}s."}]
     }

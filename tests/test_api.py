@@ -1,6 +1,6 @@
 """
 Unit Tests for OpsMind FastAPI Endpoints.
-Tests POST /research, GET /health, GET /mcp/tools, and POST /mcp/tools/execute.
+Tests POST /research, GET /status, GET /health, GET /mcp/tools, and POST /mcp/tools/execute.
 """
 
 from fastapi.testclient import TestClient
@@ -9,13 +9,27 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_api_status_diagnostics():
+    """Test diagnostics endpoint returns explicit backend details."""
+    response = client.get("/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "llm_backend" in data
+    assert "embedding_backend" in data
+    assert "mcp_enabled" in data
+    assert "mode" in data
+    assert "guardrails_enabled" in data
+    assert "langsmith_tracing" in data
+
+
 def test_api_health_check():
     """Test health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert "components" in data
+    assert "vector_store" in data
 
 
 def test_api_mcp_tools_list():
@@ -51,6 +65,7 @@ def test_api_research_endpoint_success():
     assert len(data["answer"]) > 50
     assert data["confidence"] > 0.50
     assert len(data["sources"]) > 0
+    assert "latencies" in data
     assert data["guardrail_blocked"] is False
 
 

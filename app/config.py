@@ -11,9 +11,11 @@ load_dotenv()
 
 
 class Settings:
-    # --- Vector DB (ChromaDB) ---
+    # --- Vector DB (ChromaDB) & Embeddings ---
     CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "opsmind_research_kb")
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chroma_db"))
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    USE_DETERMINISTIC_MODE = os.getenv("USE_DETERMINISTIC_MODE", "true").lower() == "true"
 
     # --- LLM (Groq) ---
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -26,6 +28,9 @@ class Settings:
     GROQ_SLUG = os.getenv("GROQ_SLUG", "research")
     GROQ_SLUG_2 = os.getenv("GROQ_SLUG_2", "fast")
 
+    # --- MCP Tool Layer ---
+    USE_MCP_SERVER = os.getenv("USE_MCP_SERVER", "true").lower() == "true"
+
     # --- Guardrails ---
     GUARDRAILS_ENABLED = os.getenv("GUARDRAILS_ENABLED", "true").lower() == "true"
 
@@ -37,11 +42,15 @@ class Settings:
     LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
     LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "opsmind_research")
     LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-    LANGSMITH_TRACING = bool(LANGSMITH_API_KEY and LANGSMITH_API_KEY.strip())
+    LANGSMITH_TRACING = bool(
+        (os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true" or os.getenv("LANGSMITH_API_KEY"))
+        and os.getenv("LANGSMITH_API_KEY")
+        and not os.getenv("LANGSMITH_API_KEY").startswith("mock")
+    )
 
 
 # Apply LangSmith env vars only if a valid key is provided
-if os.getenv("LANGSMITH_API_KEY"):
+if os.getenv("LANGSMITH_API_KEY") and not os.getenv("LANGSMITH_API_KEY", "").startswith("mock"):
     os.environ["LANGCHAIN_TRACING_V2"] = "true"
     os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
     os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "opsmind_research")
@@ -50,3 +59,4 @@ else:
     os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 settings = Settings()
+
