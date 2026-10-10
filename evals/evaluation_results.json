@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-09-03 20:33:06",
+  "timestamp": "2026-10-10 14:46:13",
   "total_cases": 25,
   "passed_cases": 13,
   "failed_cases": 12,
-  "overall_score": 0.766,
+  "overall_score": 0.776,
   "ragas_evaluation": {
     "status": "unavailable_offline",
     "message": "Actual RAGAS LLM-assisted evaluation requires USE_LIVE_LLM=true and a valid GROQ_API_KEY / PORTKEY_API_KEY. Custom deterministic heuristics executed successfully.",
@@ -15,15 +15,15 @@
     }
   },
   "custom_heuristics_summary": {
-    "faithfulness_heuristic": 0.868,
-    "answer_relevance_heuristic": 0.656,
-    "context_relevance_heuristic": 0.359,
-    "context_recall_heuristic": 0.95,
+    "faithfulness_heuristic": 0.917,
+    "answer_relevance_heuristic": 0.657,
+    "context_relevance_heuristic": 0.34,
+    "context_recall_heuristic": 1.0,
     "tool_selection_accuracy": 0.76,
     "guardrail_accuracy": 1.0,
     "citation_compliance": 1.0,
-    "average_latency_sec": 0.015,
-    "total_tokens_consumed": 17187
+    "average_latency_sec": 0.02,
+    "total_tokens_consumed": 17133
   },
   "case_results": [
     {
@@ -32,14 +32,14 @@
       "test_type": "research",
       "category": "evaluation",
       "passed": true,
-      "latency_seconds": 0.081,
+      "latency_seconds": 0.114,
       "estimated_tokens": 730,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
         "faithfulness": 0.882,
         "answer_relevance": 0.975,
-        "context_relevance": 0.656,
+        "context_relevance": 0.683,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
@@ -51,18 +51,23 @@
           "type": "internal_doc"
         },
         {
-          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
-          "id": "doc-finetuning-vs-rag-08",
-          "type": "internal_doc"
-        },
-        {
           "title": "Agentic RAG vs Traditional Naive RAG Architectures",
           "id": "doc-agentic-rag-02",
           "type": "internal_doc"
         },
         {
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
+          "type": "internal_doc"
+        },
+        {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -94,8 +99,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -104,7 +109,7 @@
       "test_type": "research",
       "category": "architecture",
       "passed": true,
-      "latency_seconds": 0.014,
+      "latency_seconds": 0.025,
       "estimated_tokens": 726,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
@@ -166,8 +171,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -175,23 +180,23 @@
       "question": "Explain the key architectural components and advantages of production LLM gateways.",
       "test_type": "research",
       "category": "infrastructure",
-      "passed": true,
-      "latency_seconds": 0.019,
-      "estimated_tokens": 733,
+      "passed": false,
+      "latency_seconds": 0.027,
+      "estimated_tokens": 730,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
-        "faithfulness": 0.882,
-        "answer_relevance": 0.767,
-        "context_relevance": 0.43,
+        "faithfulness": 0.941,
+        "answer_relevance": 0.656,
+        "context_relevance": 0.37,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
-          "title": "Production LLM Gateway Architectures & Design Patterns",
-          "id": "doc-llm-gateway-03",
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
           "type": "internal_doc"
         },
         {
@@ -200,8 +205,8 @@
           "type": "internal_doc"
         },
         {
-          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
-          "id": "doc-llm-guardrails-05",
+          "title": "Production LLM Gateway Architectures & Design Patterns",
+          "id": "doc-llm-gateway-03",
           "type": "internal_doc"
         },
         {
@@ -210,8 +215,8 @@
           "type": "internal_doc"
         },
         {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -243,8 +248,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -253,14 +258,14 @@
       "test_type": "research",
       "category": "retrieval",
       "passed": false,
-      "latency_seconds": 0.018,
+      "latency_seconds": 0.023,
       "estimated_tokens": 738,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
         "faithfulness": 0.882,
         "answer_relevance": 0.6,
-        "context_relevance": 0.307,
+        "context_relevance": 0.288,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
@@ -277,13 +282,18 @@
           "type": "internal_doc"
         },
         {
-          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
-          "id": "doc-finetuning-vs-rag-08",
+          "title": "Advanced Prompt Engineering and Context Management",
+          "id": "doc-prompt-engineering-07",
           "type": "internal_doc"
         },
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -320,8 +330,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -330,27 +340,27 @@
       "test_type": "research",
       "category": "security",
       "passed": true,
-      "latency_seconds": 0.037,
-      "estimated_tokens": 747,
+      "latency_seconds": 0.017,
+      "estimated_tokens": 738,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.715,
-        "context_relevance": 0.312,
+        "context_relevance": 0.308,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nOverview of RAG evaluation metrics including Faithfulness, Answer Relevance, Context Precision, and Context Recall using RAGAS and LLM-as-a-Judge paradigms. Modern production systems require multi-t...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
-        {
-          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
-          "id": "doc-llm-guardrails-05",
-          "type": "internal_doc"
-        },
         {
           "title": "Agentic RAG vs Traditional Naive RAG Architectures",
           "id": "doc-agentic-rag-02",
+          "type": "internal_doc"
+        },
+        {
+          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
+          "id": "doc-llm-guardrails-05",
           "type": "internal_doc"
         },
         {
@@ -361,6 +371,11 @@
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -392,8 +407,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -402,27 +417,22 @@
       "test_type": "research",
       "category": "architecture",
       "passed": false,
-      "latency_seconds": 0.025,
-      "estimated_tokens": 733,
+      "latency_seconds": 0.016,
+      "estimated_tokens": 730,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.5,
-        "context_relevance": 0.6,
+        "context_relevance": 0.525,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
           "type": "internal_doc"
         },
         {
@@ -433,6 +443,11 @@
         {
           "title": "RAG Evaluation Methodologies and Frameworks",
           "id": "doc-rag-eval-01",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -464,8 +479,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -474,27 +489,27 @@
       "test_type": "research",
       "category": "prompting",
       "passed": false,
-      "latency_seconds": 0.013,
-      "estimated_tokens": 733,
+      "latency_seconds": 0.016,
+      "estimated_tokens": 730,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.824,
+        "faithfulness": 0.941,
         "answer_relevance": 0.544,
-        "context_relevance": 0.4,
+        "context_relevance": 0.347,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
-          "title": "Advanced Prompt Engineering and Context Management",
-          "id": "doc-prompt-engineering-07",
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
           "type": "internal_doc"
         },
         {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
+          "title": "Production LLM Gateway Architectures & Design Patterns",
+          "id": "doc-llm-gateway-03",
           "type": "internal_doc"
         },
         {
@@ -505,6 +520,16 @@
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
+          "type": "internal_doc"
+        },
+        {
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
           "type": "internal_doc"
         },
         {
@@ -536,8 +561,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -546,14 +571,14 @@
       "test_type": "research",
       "category": "architecture",
       "passed": true,
-      "latency_seconds": 0.011,
+      "latency_seconds": 0.016,
       "estimated_tokens": 729,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.878,
-        "context_relevance": 0.283,
+        "context_relevance": 0.237,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
@@ -565,8 +590,13 @@
           "type": "internal_doc"
         },
         {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
+          "title": "Production LLM Gateway Architectures & Design Patterns",
+          "id": "doc-llm-gateway-03",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Advanced Prompt Engineering and Context Management",
+          "id": "doc-prompt-engineering-07",
           "type": "internal_doc"
         },
         {
@@ -575,8 +605,8 @@
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
           "type": "internal_doc"
         },
         {
@@ -608,8 +638,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -618,14 +648,14 @@
       "test_type": "research",
       "category": "evaluation",
       "passed": false,
-      "latency_seconds": 0.014,
+      "latency_seconds": 0.021,
       "estimated_tokens": 726,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
         "faithfulness": 0.882,
         "answer_relevance": 0.6,
-        "context_relevance": 0.375,
+        "context_relevance": 0.4,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
@@ -637,18 +667,23 @@
           "type": "internal_doc"
         },
         {
-          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
-          "id": "doc-finetuning-vs-rag-08",
-          "type": "internal_doc"
-        },
-        {
           "title": "Agentic RAG vs Traditional Naive RAG Architectures",
           "id": "doc-agentic-rag-02",
           "type": "internal_doc"
         },
         {
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
+          "type": "internal_doc"
+        },
+        {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -680,8 +715,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -690,14 +725,14 @@
       "test_type": "research",
       "category": "architecture",
       "passed": true,
-      "latency_seconds": 0.012,
+      "latency_seconds": 0.017,
       "estimated_tokens": 733,
       "guardrail_score": 1.0,
       "tool_selection_score": 1.0,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.7,
-        "context_relevance": 0.373,
+        "context_relevance": 0.387,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
@@ -709,13 +744,13 @@
           "type": "internal_doc"
         },
         {
-          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
-          "id": "doc-finetuning-vs-rag-08",
+          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
+          "id": "doc-llm-guardrails-05",
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -757,8 +792,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -767,27 +802,27 @@
       "test_type": "research",
       "category": "retrieval",
       "passed": true,
-      "latency_seconds": 0.011,
-      "estimated_tokens": 742,
+      "latency_seconds": 0.019,
+      "estimated_tokens": 739,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.824,
+        "faithfulness": 0.882,
         "answer_relevance": 0.736,
         "context_relevance": 0.327,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
-        {
-          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
-          "id": "doc-vector-search-04",
-          "type": "internal_doc"
-        },
         {
           "title": "Agentic RAG vs Traditional Naive RAG Architectures",
           "id": "doc-agentic-rag-02",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
           "type": "internal_doc"
         },
         {
@@ -798,6 +833,11 @@
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -829,8 +869,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -839,18 +879,18 @@
       "test_type": "research",
       "category": "infrastructure",
       "passed": false,
-      "latency_seconds": 0.013,
-      "estimated_tokens": 736,
+      "latency_seconds": 0.029,
+      "estimated_tokens": 733,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.656,
-        "context_relevance": 0.4,
+        "context_relevance": 0.387,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
           "title": "Production LLM Gateway Architectures & Design Patterns",
@@ -860,155 +900,6 @@
         {
           "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
           "id": "doc-llm-guardrails-05",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
-          "id": "doc-multi-agent-06",
-          "type": "internal_doc"
-        },
-        {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
-          "type": "internal_doc"
-        },
-        {
-          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
-          "id": "https://langchain-ai.github.io/langgraph/",
-          "type": "web_article"
-        },
-        {
-          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
-          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
-          "type": "web_article"
-        },
-        {
-          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
-          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
-          "type": "web_article"
-        },
-        {
-          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
-          "id": "https://langchain-ai.github.io/langgraph/",
-          "type": "web_article"
-        }
-      ],
-      "agents_used": [
-        "Query Planner",
-        "Web Research Agent",
-        "Knowledge RAG Agent",
-        "Evidence Critic Agent",
-        "Report Generator Agent"
-      ],
-      "tools_used": [
-        "web_search",
-        "knowledge_search"
-      ]
-    },
-    {
-      "id": 13,
-      "question": "What are the advantages of using LangSmith for LLM application observability?",
-      "test_type": "research",
-      "category": "evaluation",
-      "passed": false,
-      "latency_seconds": 0.011,
-      "estimated_tokens": 739,
-      "guardrail_score": 1.0,
-      "tool_selection_score": 1.0,
-      "custom_heuristics": {
-        "faithfulness": 0.824,
-        "answer_relevance": 0.6,
-        "context_relevance": 0.431,
-        "context_recall": 1.0,
-        "citation_compliance": 1.0
-      },
-      "actual_answer_snippet": "### Executive Summary\nOverview of RAG evaluation metrics including Faithfulness, Answer Relevance, Context Precision, and Context Recall using RAGAS and LLM-as-a-Judge paradigms. Modern production systems require multi-t...",
-      "actual_sources": [
-        {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
-          "id": "doc-vector-search-04",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
-          "id": "doc-multi-agent-06",
-          "type": "internal_doc"
-        },
-        {
-          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
-          "id": "https://langchain-ai.github.io/langgraph/",
-          "type": "web_article"
-        },
-        {
-          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
-          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
-          "type": "web_article"
-        },
-        {
-          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
-          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
-          "type": "web_article"
-        },
-        {
-          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
-          "id": "https://langchain-ai.github.io/langgraph/",
-          "type": "web_article"
-        }
-      ],
-      "agents_used": [
-        "Query Planner",
-        "Web Research Agent",
-        "Knowledge RAG Agent",
-        "Evidence Critic Agent",
-        "Report Generator Agent"
-      ],
-      "tools_used": [
-        "web_search",
-        "knowledge_search"
-      ]
-    },
-    {
-      "id": 14,
-      "question": "Explain how cross-encoder re-ranking improves retrieval precision in a two-stage RAG pipeline.",
-      "test_type": "research",
-      "category": "retrieval",
-      "passed": false,
-      "latency_seconds": 0.014,
-      "estimated_tokens": 732,
-      "guardrail_score": 1.0,
-      "tool_selection_score": 0.5,
-      "custom_heuristics": {
-        "faithfulness": 0.882,
-        "answer_relevance": 0.5,
-        "context_relevance": 0.227,
-        "context_recall": 1.0,
-        "citation_compliance": 1.0
-      },
-      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
-      "actual_sources": [
-        {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
-          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1022,8 +913,13 @@
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
+          "type": "internal_doc"
+        },
+        {
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
           "type": "internal_doc"
         },
         {
@@ -1055,8 +951,162 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
+      ]
+    },
+    {
+      "id": 13,
+      "question": "What are the advantages of using LangSmith for LLM application observability?",
+      "test_type": "research",
+      "category": "evaluation",
+      "passed": true,
+      "latency_seconds": 0.028,
+      "estimated_tokens": 730,
+      "guardrail_score": 1.0,
+      "tool_selection_score": 1.0,
+      "custom_heuristics": {
+        "faithfulness": 0.882,
+        "answer_relevance": 0.725,
+        "context_relevance": 0.417,
+        "context_recall": 1.0,
+        "citation_compliance": 1.0
+      },
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
+      "actual_sources": [
+        {
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
+          "id": "doc-agentic-rag-02",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
+          "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
+          "type": "internal_doc"
+        },
+        {
+          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
+          "id": "https://langchain-ai.github.io/langgraph/",
+          "type": "web_article"
+        },
+        {
+          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
+          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
+          "type": "web_article"
+        },
+        {
+          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
+          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
+          "type": "web_article"
+        },
+        {
+          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
+          "id": "https://langchain-ai.github.io/langgraph/",
+          "type": "web_article"
+        }
+      ],
+      "agents_used": [
+        "Query Planner",
+        "Web Research Agent",
+        "Knowledge RAG Agent",
+        "Evidence Critic Agent",
+        "Report Generator Agent"
+      ],
+      "tools_used": [
+        "knowledge_search",
+        "web_search"
+      ]
+    },
+    {
+      "id": 14,
+      "question": "Explain how cross-encoder re-ranking improves retrieval precision in a two-stage RAG pipeline.",
+      "test_type": "research",
+      "category": "retrieval",
+      "passed": false,
+      "latency_seconds": 0.018,
+      "estimated_tokens": 732,
+      "guardrail_score": 1.0,
+      "tool_selection_score": 0.5,
+      "custom_heuristics": {
+        "faithfulness": 0.882,
+        "answer_relevance": 0.5,
+        "context_relevance": 0.2,
+        "context_recall": 1.0,
+        "citation_compliance": 1.0
+      },
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
+      "actual_sources": [
+        {
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
+          "id": "doc-agentic-rag-02",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
+          "id": "doc-vector-search-04",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
+          "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
+          "type": "internal_doc"
+        },
+        {
+          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
+          "id": "https://langchain-ai.github.io/langgraph/",
+          "type": "web_article"
+        },
+        {
+          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
+          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
+          "type": "web_article"
+        },
+        {
+          "title": "RAGAS 0.2 Framework Release & Multi-Turn Metrics",
+          "id": "https://docs.ragas.io/en/latest/concepts/metrics/",
+          "type": "web_article"
+        },
+        {
+          "title": "LangGraph: Multi-Agent Orchestration with Cyclic Graphs",
+          "id": "https://langchain-ai.github.io/langgraph/",
+          "type": "web_article"
+        }
+      ],
+      "agents_used": [
+        "Query Planner",
+        "Web Research Agent",
+        "Knowledge RAG Agent",
+        "Evidence Critic Agent",
+        "Report Generator Agent"
+      ],
+      "tools_used": [
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1065,18 +1115,18 @@
       "test_type": "research",
       "category": "architecture",
       "passed": false,
-      "latency_seconds": 0.013,
-      "estimated_tokens": 742,
+      "latency_seconds": 0.028,
+      "estimated_tokens": 733,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.544,
-        "context_relevance": 0.4,
+        "context_relevance": 0.341,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nOverview of RAG evaluation metrics including Faithfulness, Answer Relevance, Context Precision, and Context Recall using RAGAS and LLM-as-a-Judge paradigms. Modern production systems require multi-t...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
@@ -1084,13 +1134,18 @@
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "Advanced Prompt Engineering and Context Management",
+          "id": "doc-prompt-engineering-07",
           "type": "internal_doc"
         },
         {
-          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
-          "id": "doc-llm-guardrails-05",
+          "title": "Production LLM Gateway Architectures & Design Patterns",
+          "id": "doc-llm-gateway-03",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1127,8 +1182,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1137,18 +1192,18 @@
       "test_type": "research",
       "category": "retrieval",
       "passed": false,
-      "latency_seconds": 0.015,
-      "estimated_tokens": 734,
+      "latency_seconds": 0.02,
+      "estimated_tokens": 732,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.824,
+        "faithfulness": 0.941,
         "answer_relevance": 0.475,
-        "context_relevance": 0.281,
+        "context_relevance": 0.3,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
           "title": "Vector Databases, Embeddings, and Indexing Algorithms",
@@ -1161,13 +1216,18 @@
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
+          "id": "doc-llm-guardrails-05",
           "type": "internal_doc"
         },
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1199,8 +1259,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1209,22 +1269,27 @@
       "test_type": "research",
       "category": "prompting",
       "passed": false,
-      "latency_seconds": 0.012,
-      "estimated_tokens": 736,
+      "latency_seconds": 0.017,
+      "estimated_tokens": 733,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.824,
+        "faithfulness": 0.941,
         "answer_relevance": 0.457,
-        "context_relevance": 0.289,
-        "context_recall": 0.0,
+        "context_relevance": 0.257,
+        "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
+          "id": "doc-llm-guardrails-05",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Advanced Prompt Engineering and Context Management",
+          "id": "doc-prompt-engineering-07",
           "type": "internal_doc"
         },
         {
@@ -1233,13 +1298,13 @@
           "type": "internal_doc"
         },
         {
-          "title": "Vector Databases, Embeddings, and Indexing Algorithms",
-          "id": "doc-vector-search-04",
+          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
+          "id": "doc-multi-agent-06",
           "type": "internal_doc"
         },
         {
-          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
-          "id": "doc-multi-agent-06",
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1271,8 +1336,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1281,42 +1346,32 @@
       "test_type": "research",
       "category": "infrastructure",
       "passed": false,
-      "latency_seconds": 0.012,
-      "estimated_tokens": 737,
+      "latency_seconds": 0.017,
+      "estimated_tokens": 734,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
         "faithfulness": 0.882,
         "answer_relevance": 0.683,
-        "context_relevance": 0.222,
+        "context_relevance": 0.157,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
         {
-          "title": "Production LLM Gateway Architectures & Design Patterns",
-          "id": "doc-llm-gateway-03",
-          "type": "internal_doc"
-        },
-        {
-          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
-          "id": "doc-llm-guardrails-05",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
-          "id": "doc-multi-agent-06",
-          "type": "internal_doc"
-        },
-        {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
           "title": "RAG Evaluation Methodologies and Frameworks",
           "id": "doc-rag-eval-01",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
+          "id": "doc-multi-agent-06",
           "type": "internal_doc"
         },
         {
@@ -1348,8 +1403,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1358,27 +1413,27 @@
       "test_type": "research",
       "category": "evaluation",
       "passed": true,
-      "latency_seconds": 0.013,
-      "estimated_tokens": 734,
+      "latency_seconds": 0.018,
+      "estimated_tokens": 732,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.85,
-        "context_relevance": 0.375,
+        "context_relevance": 0.367,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
-        {
-          "title": "RAG Evaluation Methodologies and Frameworks",
-          "id": "doc-rag-eval-01",
-          "type": "internal_doc"
-        },
         {
           "title": "Agentic RAG vs Traditional Naive RAG Architectures",
           "id": "doc-agentic-rag-02",
+          "type": "internal_doc"
+        },
+        {
+          "title": "RAG Evaluation Methodologies and Frameworks",
+          "id": "doc-rag-eval-01",
           "type": "internal_doc"
         },
         {
@@ -1389,6 +1444,11 @@
         {
           "title": "Multi-Agent System Orchestration Patterns in LangGraph",
           "id": "doc-multi-agent-06",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1420,8 +1480,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {
@@ -1430,37 +1490,37 @@
       "test_type": "research",
       "category": "security",
       "passed": false,
-      "latency_seconds": 0.014,
-      "estimated_tokens": 738,
+      "latency_seconds": 0.019,
+      "estimated_tokens": 736,
       "guardrail_score": 1.0,
       "tool_selection_score": 0.5,
       "custom_heuristics": {
-        "faithfulness": 0.882,
+        "faithfulness": 0.941,
         "answer_relevance": 0.638,
         "context_relevance": 0.226,
         "context_recall": 1.0,
         "citation_compliance": 1.0
       },
-      "actual_answer_snippet": "### Executive Summary\nDeep architectural comparison between static single-shot Traditional RAG and iterative, multi-hop Agentic RAG workflows. Modern production systems require multi-tiered validation, modular agentic or...",
+      "actual_answer_snippet": "### Executive Summary\nComprehensive trade-off analysis between Fine-Tuning and Retrieval-Augmented Generation for enterprise AI applications. Modern production systems require multi-tiered validation, modular agentic orc...",
       "actual_sources": [
-        {
-          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
-          "id": "doc-llm-guardrails-05",
-          "type": "internal_doc"
-        },
         {
           "title": "Production LLM Gateway Architectures & Design Patterns",
           "id": "doc-llm-gateway-03",
           "type": "internal_doc"
         },
         {
-          "title": "Agentic RAG vs Traditional Naive RAG Architectures",
-          "id": "doc-agentic-rag-02",
+          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
+          "id": "doc-multi-agent-06",
           "type": "internal_doc"
         },
         {
-          "title": "Multi-Agent System Orchestration Patterns in LangGraph",
-          "id": "doc-multi-agent-06",
+          "title": "LLM Safety Guardrails: Input, Tool, and Output Defenses",
+          "id": "doc-llm-guardrails-05",
+          "type": "internal_doc"
+        },
+        {
+          "title": "Fine-Tuning vs RAG: Trade-offs, Decision Matrix, and Hybrid Approaches",
+          "id": "doc-finetuning-vs-rag-08",
           "type": "internal_doc"
         },
         {
@@ -1497,8 +1557,8 @@
         "Report Generator Agent"
       ],
       "tools_used": [
-        "web_search",
-        "knowledge_search"
+        "knowledge_search",
+        "web_search"
       ]
     },
     {

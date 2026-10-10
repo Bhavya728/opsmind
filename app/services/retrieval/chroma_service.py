@@ -196,8 +196,9 @@ class ChromaService:
 
         where_filter = {"category": category} if category else None
         try:
+            query_emb = self.embedding_fn([query_text])
             results = self.collection.query(
-                query_texts=[query_text],
+                query_embeddings=query_emb,
                 n_results=min(n_results, max(1, self.collection.count())),
                 where=where_filter
             )
@@ -209,15 +210,21 @@ class ChromaService:
                 ids = results["ids"][0] if results.get("ids") else [""] * len(docs)
                 distances = results["distances"][0] if results.get("distances") else [0.2] * len(docs)
                 
+                q_words = set(query_text.lower().split())
                 for doc_text, meta, cid, dist in zip(docs, metas, ids, distances):
-                    similarity = max(0.0, min(1.0, 1.0 - (dist / 2.0)))
+                    vec_sim = max(0.0, min(1.0, 1.0 - (dist / 2.0)))
+                    doc_words = set(doc_text.lower().split())
+                    overlap = len(q_words & doc_words) / (len(q_words) + 1)
+                    tag_matches = sum(1 for t in str(meta.get("tags", "")).split(",") if t and t.lower() in query_text.lower())
+                    hybrid_score = round(min(1.0, max(vec_sim, 0.3 * vec_sim + 0.5 * overlap + 0.2 * min(1.0, tag_matches))), 3)
+                    
                     output.append({
                         "id": cid,
                         "doc_id": meta.get("doc_id", cid),
                         "title": meta.get("title", "Knowledge Document"),
                         "category": meta.get("category", "research"),
                         "content": doc_text,
-                        "score": round(similarity, 3)
+                        "score": hybrid_score
                     })
             if not output:
                 return self._in_memory_fallback_query(query_text, n_results, category)

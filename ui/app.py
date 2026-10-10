@@ -105,22 +105,27 @@ if nav_choice == "🔬 Research Assistant":
     st.markdown('<div class="main-header">OpsMind — AI Research Assistant</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Multi-agent investigation using ChromaDB RAG, FastMCP Tools, Evidence Critique, and Runtime Guardrails.</div>', unsafe_allow_html=True)
 
+    if "user_query" not in st.session_state:
+        st.session_state["user_query"] = "What are the major approaches and metrics used for RAG evaluation?"
+
     # Preset Example Queries
     col_ex1, col_ex2, col_ex3 = st.columns(3)
-    preset_query = ""
     with col_ex1:
         if st.button("📌 Approaches to RAG Evaluation"):
-            preset_query = "What are the major approaches and metrics used for RAG evaluation?"
+            st.session_state["user_query"] = "What are the major approaches and metrics used for RAG evaluation?"
+            st.rerun()
     with col_ex2:
         if st.button("📌 Agentic RAG vs Traditional RAG"):
-            preset_query = "Compare agentic RAG with traditional naive RAG architectures."
+            st.session_state["user_query"] = "Compare agentic RAG with traditional naive RAG architectures."
+            st.rerun()
     with col_ex3:
         if st.button("📌 Production LLM Gateways"):
-            preset_query = "Explain the key architectural components and advantages of production LLM gateways."
+            st.session_state["user_query"] = "Explain the key architectural components and advantages of production LLM gateways."
+            st.rerun()
 
     user_query = st.text_area(
         "Enter your research question:",
-        value=preset_query,
+        value=st.session_state["user_query"],
         height=100,
         placeholder="e.g., Explain the trade-offs between Fine-Tuning and RAG for enterprise applications..."
     )
