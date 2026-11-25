@@ -1,163 +1,99 @@
-# OpsMind — Architecture Design & Technical Specifications
+# OpsMind — Architecture
 
-This document outlines the complete architectural design, data flow, multi-agent coordination, and engineering specifications behind **OpsMind — Multi-Agent Research & Knowledge System**.
-
----
-
-## 1. Architectural Principles
-
-OpsMind implements a production-oriented multi-agent architecture designed to replace brittle single-shot RAG with a verifiable, multi-step investigation pipeline:
-1. **Dynamic Query Decomposition**: Breaking down multi-faceted research topics into targeted sub-queries.
-2. **Dense Vector Retrieval (RAG)**: Indexing technical computer science and AI documents into ChromaDB with 384-d Hugging Face SentenceTransformer embeddings (`all-MiniLM-L6-v2`).
-3. **Model Context Protocol (FastMCP)**: Standardizing agent tool execution via the official `mcp.server.fastmcp.FastMCP` protocol.
-4. **Evidence Evaluation & Critic**: Verifying factual alignment, detecting contradictions, and scoring confidence before report generation.
-5. **Runtime Safety Guardrails**: Deterministic 3-tier validation across Input, Tool execution, and Output phases.
-6. **Task-Based LLM Gateway**: Routing fast classification and critic tasks to `llama-3.1-8b-instant` and report synthesis to `llama-3.3-70b-versatile`, with graceful local fallback.
-7. **Dual-Layer Evaluation**: Supporting both official RAGAS framework metrics (`ragas.metrics`) and fast deterministic heuristic benchmarks.
+This document describes how a research question flows through OpsMind and where each part lives in the code. Configuration options are listed in the README; every value below marked `LIKE_THIS` is a setting in `app/config.py` that can be overridden in `.env`.
 
 ---
 
-## 2. Multi-Agent Topology (LangGraph)
+## 1. Request flow
 
 ```
-                            [ User Query ]
-                                  |
-                                  v
-                     [ Gate 1: Input Guardrail ]
-                      /                       \
-             (Violations)                   (Passed)
-                  v                            v
-       [ Refusal Response ]           [ Query Planner ]
-                                        /           \
-                                       v             v
-                           [ Web Research ]   [ RAG Knowledge ]
-                           (FastMCP: web_search) (FastMCP: knowledge_search)
-                                       \             /
-                                        v           v
-                                    [ Evidence Critic ]
-                                              |
-                                              v
-                                  [ Report Generator ]
-                                              |
-                                              v
-                                [ Gate 3: Output Guardrail ]
-                                              |
-                                              v
-                                 [ Structured Report ]
+POST /research  (app/main.py)          or the web UI (ui/index.html, served at /)
+        │
+        ▼
+investigate_query()  (app/agents/graph.py)
+  ├─ length check (MAX_QUERY_CHARS) ─────────────► HTTP 400
+  ├─ input guardrail (app/guardrails/rails.py) ──► refusal
+  ▼
+LangGraph state machine
+  query_planner ──out of scope──► END (refusal)
+      │ need_web / need_rag (fan-out; parallel when both)
+      ├──► web_research ──┐
+      └──► rag_knowledge ─┤
+                          ▼
+                   evidence_critic ──follow_up_queries──► web_research / rag_knowledge  (≤ MAX_RESEARCH_ROUNDS)
+                          ▼
+                   report_generator ◄──revision_pending──┐  (≤ MAX_REPORT_REVISIONS)
+                          ▼                              │
+                   claim_verifier ───────────────────────┘
+                          ▼
+                         END
 ```
 
-### State Definition (`ResearchState`)
-The LangGraph state is tracked in `app/agents/state.py` using Python `TypedDict` with explicit merge operators and per-node latency telemetry:
-```python
-class ResearchState(TypedDict):
-    query: str
-    thread_id: Optional[str]
-    plan: List[str]
-    need_rag: bool
-    need_web: bool
-    search_queries: List[str]
-    focus_areas: List[str]
-    current_step: str
-    status: str
-    rag_findings: List[Dict[str, Any]]
-    web_findings: List[Dict[str, Any]]
-    observed_evidence: Annotated[List[str], operator.add]
-    verified_sources: List[Dict[str, Any]]
-    critic_score: float
-    confidence: float
-    critic_notes: str
-    report: str
-    agents_used: Annotated[List[str], operator.add]
-    tools_used: Annotated[List[str], operator.add]
-    latencies: Dict[str, float]
-    guardrail_blocked: bool
-    guardrail_response: Optional[str]
-    messages: Annotated[List[Dict[str, str]], operator.add]
-    final_output: Dict[str, Any]
-```
+Routing functions: `route_after_planning`, `route_after_critic`, `route_after_report`, `route_after_verification` in `app/agents/graph.py`.
 
----
+## 2. State
 
-## 3. Component Specifications
+`ResearchState` (`app/agents/state.py`) is a `TypedDict`. Fields written by the parallel retrieval branches declare reducers:
+- `latencies`: merged dicts (per node; later rounds use suffixed keys such as `rag_r2`)
+- `token_usage`: summed per agent
+- `agents_used`, `tools_used`, `warnings`, `messages`, `observed_evidence`: appended lists
+- `source_verdicts`: merged map of source key → accepted, kept across critic rounds so sources are judged once
+- `current_step`: last value wins
 
-### 3.1 Query Planner Node (`app/agents/nodes/query_planner.py`)
-- **LLM Tier**: `llama-3.1-8b-instant` (Fast routing)
-- **Role**: Deconstructs research queries into sub-questions, identifies focus areas, and determines whether RAG, Web, or both retrieval mechanisms are necessary.
-- **Latency Tracking**: Records duration under `latencies["query_planner"]`.
+## 3. Agents
 
-### 3.2 Web Research Node (`app/agents/nodes/web_research_agent.py`)
-- **Tool Protocol**: FastMCP `web_search`
-- **Role**: Executes web search across planned sub-queries to acquire fresh external literature, benchmarks, and release notes.
-- **Latency Tracking**: Records duration under `latencies["web_research"]`.
+| Node | File | Model | Output |
+|---|---|---|---|
+| Query Planner | `nodes/query_planner.py` | `GROQ_FAST_MODEL` | `in_scope`, `need_rag`, `need_web`, `needs_recent`, `search_queries` (≤ `MAX_SEARCH_QUERIES`), plan |
+| Web Research | `nodes/web_research_agent.py` | — | `web_findings` (deduped by URL, ≤ `MAX_CONTEXT_SOURCES`) |
+| Knowledge / RAG | `nodes/rag_knowledge_agent.py` | — | `rag_findings` (≥ `MIN_RELEVANCE_SCORE`, ≤ `MAX_CONTEXT_SOURCES`) |
+| Evidence Critic | `nodes/evidence_critic_agent.py` | `GROQ_FAST_MODEL` | per-source verdicts, `evidence_quality`, gaps, contradictions, optional `followup_queries` |
+| Report Generator | `nodes/report_generator_agent.py` | `GROQ_MODEL` | `report`, validated `citations` |
+| Claim Verifier | `nodes/claim_verifier_agent.py` | `VERIFIER_MODEL` | `claims`, `claim_support`, final `confidence`, `revision_pending` |
 
-### 3.3 Knowledge / RAG Node (`app/agents/nodes/rag_knowledge_agent.py`)
-- **Tool Protocol**: FastMCP `knowledge_search` & `document_lookup`
-- **Vector DB**: ChromaDB embedded collection (`opsmind_knowledge_base`)
-- **Role**: Queries vector database with dense embeddings to fetch relevant internal technical documents with relevance scores.
-- **Latency Tracking**: Records duration under `latencies["rag_knowledge"]`.
+Prompts for the critic, report generator and verifier mark retrieved text as untrusted data. The planner and report prompts include today's date; the planner flags time-sensitive questions (`needs_recent`), which restricts web search to `WEB_RECENT_TIME_RANGE`.
 
-### 3.4 Evidence Critic Node (`app/agents/nodes/evidence_critic_agent.py`)
-- **LLM Tier**: `llama-3.1-8b-instant` (Evaluation)
-- **Role**: Cross-references RAG chunks and Web snippets, flags contradictory assertions, computes confidence score (0.0 to 1.0), and compiles source references.
-- **Latency Tracking**: Records duration under `latencies["evidence_critic"]`.
+**Confidence** = `evidence_quality × claim_support`:
+- `evidence_quality`: mean retrieval relevance of accepted sources, averaged with the critic's coverage estimate
+- `claim_support`: (supported + ½·partial + ½·uncited) / claims checked
+- With no accepted evidence, confidence is 0.
 
-### 3.5 Report Generator Node (`app/agents/nodes/report_generator_agent.py`)
-- **LLM Tier**: `llama-3.3-70b-versatile` (Frontier Synthesis)
-- **Role**: Synthesizes verified evidence into an Executive Summary, Technical Architecture Analysis, Comparative Trade-offs, and explicit source citations (`[Source: doc-id]`).
-- **Latency Tracking**: Records duration under `latencies["report_generator"]`.
+## 4. Retrieval
 
----
+- **Knowledge base** (`app/services/retrieval/chroma_service.py`): built-in documents (`app/data/knowledge_base.py`) plus `.md`/`.txt` files in `KNOWLEDGE_DIR`. Documents are chunked (`CHUNK_SIZE`, `CHUNK_OVERLAP`) and embedded with `EMBEDDING_MODEL` (or hash embeddings when `USE_DETERMINISTIC_MODE=true`). They are stored in ChromaDB under `CHROMA_PERSIST_DIR` with cosine distance. A fingerprint of the corpus, chunk settings and embedding backend triggers an automatic rebuild when any of them change.
+- **Scoring**: `HYBRID_VECTOR_WEIGHT × cosine + (1 − weight) × query-term coverage`; candidates are over-fetched and re-ranked.
+- **Web** (`app/tools/mcp_server.py`): `ACTIVE_WEB_PROVIDER` is `tavily` (API, when `TAVILY_API_KEY` is set), `ddgs` (scraping fallback), or `offline_index` (tests). Failures return an error result and never fabricated content.
 
-## 4. Model Context Protocol (FastMCP) Layer
+## 5. Tools (MCP)
 
-Tool discovery and invocation are managed through the official FastMCP SDK:
-- **Server** (`app/tools/mcp_server.py`):
-  Initializes `FastMCP("OpsMind-Research-Tools")` and registers tools with type annotations and docstrings.
-- **Client** (`app/tools/mcp_client.py`):
-  Introspects registered tools and executes calls synchronously with parameter schema verification.
-- **Exported Tools**:
-  1. `web_search(query: str, num_results: int = 3)`
-  2. `knowledge_search(query: str, category: str = None, limit: int = 4)`
-  3. `document_lookup(doc_id: str)`
+FastMCP server `OpsMind-Research-Tools` (`app/tools/mcp_server.py`) exposes `web_search`, `knowledge_search` and `document_lookup`. `app/tools/mcp_client.py` applies the tool guardrail before calling the registered function.
 
----
+## 6. LLM gateway
 
-## 5. ChromaDB & SentenceTransformer Pipeline
+`app/gateway/client.py`:
+- `get_llm(task_type)` picks the model tier (fast: planning, critic, verification; strong: synthesis) and the backend (Portkey if `PORTKEY_API_KEY`, else Groq). It applies `LLM_MAX_OUTPUT_TOKENS_*`, `LLM_REASONING_EFFORT` and `LLM_MAX_RETRIES`; rate-limited calls wait the time Groq asks for.
+- In live mode a failed call raises; the API returns 502. `ALLOW_OFFLINE_FALLBACK=true` substitutes the offline engine instead.
+- With `USE_LIVE_LLM=false`, `DeterministicReasoningLLM` derives planner, critic, report and verifier output from the prompt itself (used by the test suite).
+- `get_judge_llm()` returns the evaluation judge (`JUDGE_MODEL`, `JUDGE_API_KEY`, optional `JUDGE_BASE_URL`).
 
-- **Vector Database**: Embedded [ChromaDB](https://www.trychroma.com/) with native HNSW approximate nearest neighbor indexing.
-- **Embeddings**:
-  - `HuggingFaceSentenceTransformerEmbeddingFunction`: Real `sentence-transformers/all-MiniLM-L6-v2` producing normalized 384-dimensional dense vectors.
-  - `DeterministicEmbeddingFunction`: Normalized 384-d deterministic hash embeddings for fast local tests when `USE_DETERMINISTIC_MODE=true`.
-- **Status Introspection**: Exposes `chroma_service.get_status()` returning active embedding backend and document count.
+## 7. Guardrails
 
----
+`app/guardrails/rails.py`:
+1. **Input**: injection, destructive-command and chit-chat patterns (`GUARDRAILS_ENABLED`).
+2. **Topic**: the planner's `in_scope` decision against `RESEARCH_SCOPE` (`TOPIC_GUARD_ENABLED`).
+3. **Tool**: strict identifiers (`doc_id`, `category`); free text rejects command sequences, path traversal and control characters.
+4. **Output**: secret redaction, then `validate_citations`. This normalizes citation styles and drops ids that are not verified sources.
 
-## 6. Three-Tier Runtime Safety Guardrails
+## 8. Evaluation
 
-Safety policies are enforced at three distinct gates:
-1. **Input Rails** (`app/guardrails/rails.py`):
-   - Regex and heuristic classifiers for adversarial prompt injections (`Ignore all instructions`, `DAN mode`, `developer mode override`).
-   - Destructive command filters (`rm -rf`, `DROP TABLE`).
-   - Out-of-scope chit-chat refusal (recipes, jokes, general chat) to maintain domain focus.
-2. **Tool Rails**:
-   - Parameter sanitization against shell control characters (`;`, `&&`, `|`, `` ` ``) and directory traversal (`../`).
-3. **Output Rails**:
-   - Token pattern scanner to mask sensitive credentials (`sk-`, `ghp_`, `Bearer`) into `[REDACTED_SECRET]`.
-   - Groundedness check verifying cited source tags.
+`evals/evaluator.py` runs `evals/golden_dataset.json` through `investigate_query` and scores each case:
+- **Deterministic** (`evals/metrics.py`): guardrail accuracy, routing recall, critic source recall/precision, citation use.
+- **Judge** (`evals/judge.py`): correctness against `expected_answer_characteristics`, faithfulness to sources, relevance.
 
----
+Errors are recorded separately from scores; each report stores the configuration used (`evals/evaluation_results.json`).
 
-## 7. Dual Evaluation Framework
+## 9. Limits to know
 
-- **Golden Dataset**: 25 curated test cases in `evals/golden_dataset.json`.
-- **RAGAS Evaluation Layer**:
-  - Official `ragas.metrics`: `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`.
-  - Executed via `ragas.evaluate` when `USE_LIVE_LLM=true` and LLM credentials are provided.
-- **Deterministic Heuristic Layer**:
-  - `custom_faithfulness_heuristic`: Sentence-level context overlap support ratio.
-  - `custom_answer_relevance_heuristic`: Query-answer keyword alignment and structure completeness.
-  - `custom_context_relevance_heuristic`: Retrieval chunk density.
-  - `custom_context_recall_heuristic`: Ground truth evidence matching.
-  - `custom_tool_selection_accuracy`: Jaccard index between expected and actual tools.
-  - `custom_guardrail_accuracy`: Binary precision on security test cases.
-  - `custom_citation_compliance`: Verifies presence of explicit source citations.
+- Groq free tier: ~8,000 tokens/minute and 200,000 tokens/day per model. One question uses ~10k–30k tokens, mostly on the fast model.
+- `thread_id` is accepted but there is no conversation memory between questions.
+- The API has no authentication; bind it to `127.0.0.1` unless you add one.

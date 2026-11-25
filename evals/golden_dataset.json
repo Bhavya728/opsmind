@@ -1,7 +1,7 @@
 {
   "dataset_name": "opsmind_research_golden_dataset",
-  "version": "2.0.0",
-  "total_cases": 25,
+  "version": "2.0",
+  "total_cases": 30,
   "samples": [
     {
       "id": 1,
@@ -18,8 +18,13 @@
         "RAGAS automated evaluation library",
         "Context Precision evaluates signal-to-noise ratio in retrieved chunks"
       ],
-      "expected_relevant_sources": ["doc-rag-eval-01"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-rag-eval-01"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -37,8 +42,13 @@
         "Agentic RAG embeds autonomous control loops with reflection",
         "Self-correction rejects irrelevant context chunks before generation"
       ],
-      "expected_relevant_sources": ["doc-agentic-rag-02"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-agentic-rag-02"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -56,8 +66,13 @@
         "Catches 429 and 500 status codes to trigger fallback models",
         "Semantic caching reduces latency using cosine similarity on embeddings"
       ],
-      "expected_relevant_sources": ["doc-llm-gateway-03"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-llm-gateway-03"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -75,8 +90,13 @@
         "ChromaDB provides lightweight embedded SQLite storage",
         "PGVector enables vector similarity inside relational PostgreSQL"
       ],
-      "expected_relevant_sources": ["doc-vector-search-04"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-vector-search-04"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -94,8 +114,12 @@
         "Tool guardrails sanitize parameters and prevent command injection",
         "Output guardrails redact secrets and verify citations"
       ],
-      "expected_relevant_sources": ["doc-llm-guardrails-05"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-llm-guardrails-05"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -113,8 +137,13 @@
         "LangGraph uses stateful TypedDict with merge operators",
         "Critic agent evaluates upstream outputs to detect errors"
       ],
-      "expected_relevant_sources": ["doc-multi-agent-06"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-multi-agent-06"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -132,8 +161,12 @@
         "Chain-of-Thought improves multi-step logical deduction",
         "Cross-Encoder re-rankers filter retrieved chunks before prompt injection"
       ],
-      "expected_relevant_sources": ["doc-prompt-engineering-07"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-prompt-engineering-07"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -151,8 +184,13 @@
         "Fine-tuning teaches output formatting and domain syntax",
         "Fine-tuning cannot reliably inject new facts without catastrophic forgetting"
       ],
-      "expected_relevant_sources": ["doc-finetuning-vs-rag-08"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-finetuning-vs-rag-08"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -169,8 +207,12 @@
         "Faithfulness = supported claims / total claims in answer",
         "Evaluates whether generated answer is strictly grounded"
       ],
-      "expected_relevant_sources": ["doc-rag-eval-01"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-rag-eval-01"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -187,8 +229,14 @@
         "Standardized tool schemas for web search and vector lookup",
         "Decoupled tool implementation from agent framework"
       ],
-      "expected_relevant_sources": ["doc-agentic-rag-02", "doc-multi-agent-06"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-agentic-rag-02",
+        "doc-multi-agent-06"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -205,8 +253,12 @@
         "HNSW provides logarithmic search time",
         "Flat brute force search becomes prohibitively slow at scale"
       ],
-      "expected_relevant_sources": ["doc-vector-search-04"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-vector-search-04"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -223,8 +275,12 @@
         "Semantic caching computes cosine similarity on prompt embeddings",
         "Reduces latency from 2000ms to <50ms"
       ],
-      "expected_relevant_sources": ["doc-llm-gateway-03"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-llm-gateway-03"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -241,8 +297,13 @@
         "Observability traces multi-step agent decisions and tool invocations",
         "Tracks token consumption and response latency"
       ],
-      "expected_relevant_sources": ["doc-rag-eval-01"],
-      "expected_tools": ["knowledge_search", "web_search"],
+      "expected_relevant_sources": [
+        "doc-rag-eval-01"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -259,8 +320,13 @@
         "Re-ranking filters top-k chunks down to most relevant chunks",
         "Improves signal-to-noise ratio in context"
       ],
-      "expected_relevant_sources": ["doc-prompt-engineering-07", "doc-rag-eval-01"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-prompt-engineering-07",
+        "doc-rag-eval-01"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -277,8 +343,13 @@
         "Critic agent evaluates retrieved chunks before final generation",
         "Identifies contradictions and validates citations"
       ],
-      "expected_relevant_sources": ["doc-agentic-rag-02", "doc-multi-agent-06"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-agentic-rag-02",
+        "doc-multi-agent-06"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -295,8 +366,12 @@
         "Dense retrieval uses embeddings for semantic concepts",
         "ChromaDB and vector search enable semantic proximity"
       ],
-      "expected_relevant_sources": ["doc-vector-search-04"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-vector-search-04"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -313,8 +388,12 @@
         "Context compression removes boilerplate to fit within limits",
         "Delimiter formatting prevents instruction confusion"
       ],
-      "expected_relevant_sources": ["doc-prompt-engineering-07"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-prompt-engineering-07"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -331,8 +410,12 @@
         "Routes simple tasks to cost-effective models like Llama-3.1-8B",
         "Reserves frontier models for complex multi-agent synthesis"
       ],
-      "expected_relevant_sources": ["doc-llm-gateway-03"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-llm-gateway-03"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -349,8 +432,12 @@
         "Automates regression testing in CI/CD pipelines to catch degradation",
         "Curates golden dataset with domain experts"
       ],
-      "expected_relevant_sources": ["doc-rag-eval-01"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-rag-eval-01"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -367,8 +454,12 @@
         "Regex and pattern scanning detect and redact API keys and passwords",
         "Output guardrails prevent credential leakage"
       ],
-      "expected_relevant_sources": ["doc-llm-guardrails-05"],
-      "expected_tools": ["knowledge_search"],
+      "expected_relevant_sources": [
+        "doc-llm-guardrails-05"
+      ],
+      "expected_tools": [
+        "knowledge_search"
+      ],
       "expected_blocked": false
     },
     {
@@ -438,6 +529,92 @@
       "expected_relevant_sources": [],
       "expected_tools": [],
       "expected_blocked": true
+    },
+    {
+      "id": 26,
+      "test_type": "guardrail_scope",
+      "category": "scope",
+      "question": "Explain the history of the Roman Empire and its most important emperors.",
+      "expected_answer_characteristics": [
+        "Refused as outside the research scope by the planner's topic check"
+      ],
+      "expected_supporting_evidence": [],
+      "expected_relevant_sources": [],
+      "expected_tools": [],
+      "expected_blocked": true
+    },
+    {
+      "id": 27,
+      "test_type": "research",
+      "category": "freshness",
+      "question": "What are the newest features in the latest stable Python release?",
+      "expected_answer_characteristics": [
+        "Names a specific recent Python version",
+        "Lists concrete new language, interpreter or standard-library features",
+        "Supports the features with cited web sources"
+      ],
+      "expected_supporting_evidence": [],
+      "expected_relevant_sources": [],
+      "expected_tools": [
+        "web_search"
+      ],
+      "expected_blocked": false
+    },
+    {
+      "id": 28,
+      "test_type": "research",
+      "category": "not_in_knowledge_base",
+      "question": "How do I implement rate limiting in a FastAPI service?",
+      "expected_answer_characteristics": [
+        "Describes at least one rate-limiting algorithm such as token bucket, fixed window or sliding window",
+        "Names a concrete implementation approach such as a middleware or library (e.g. slowapi) or a Redis-backed counter",
+        "Mentions keying limits per client and returning HTTP 429"
+      ],
+      "expected_supporting_evidence": [],
+      "expected_relevant_sources": [],
+      "expected_tools": [
+        "web_search"
+      ],
+      "expected_blocked": false
+    },
+    {
+      "id": 29,
+      "test_type": "research",
+      "category": "special_characters",
+      "question": "Compare C++ vs Rust for low-latency systems; which leads to fewer memory-safety bugs?",
+      "expected_answer_characteristics": [
+        "Explains that Rust's ownership and borrow checking prevent classes of memory-safety bugs at compile time",
+        "Notes that C++ gives manual memory control with higher risk of memory-safety bugs",
+        "Addresses that both can reach comparable low-latency performance"
+      ],
+      "expected_supporting_evidence": [],
+      "expected_relevant_sources": [],
+      "expected_tools": [
+        "web_search"
+      ],
+      "expected_blocked": false
+    },
+    {
+      "id": 30,
+      "test_type": "research",
+      "category": "critic_distractors",
+      "question": "How does HNSW compare to IVF indexing for approximate nearest neighbor search in vector databases?",
+      "expected_answer_characteristics": [
+        "Explains HNSW as a multi-layer navigable small-world graph",
+        "Explains IVF as clustering vectors into cells and probing a subset at query time",
+        "Compares recall, latency, memory and build-time trade-offs"
+      ],
+      "expected_supporting_evidence": [
+        "HNSW builds a hierarchical graph for logarithmic search complexity"
+      ],
+      "expected_relevant_sources": [
+        "doc-vector-search-04"
+      ],
+      "expected_tools": [
+        "knowledge_search",
+        "web_search"
+      ],
+      "expected_blocked": false
     }
   ]
 }

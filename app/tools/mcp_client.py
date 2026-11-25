@@ -5,7 +5,6 @@ over standard MCP protocol semantics.
 """
 
 from typing import Dict, List, Any, Optional
-from app.config import settings
 from app.utils.logger import logfire
 
 

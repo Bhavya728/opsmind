@@ -5,7 +5,18 @@ Executes all unit, integration, guardrail, gateway, MCP, RAG, evaluation, and AP
 
 import sys
 import os
+import tempfile
 import traceback
+
+# Tests always run offline against a throwaway index: no API calls, no changes to app/data/chroma_db.
+# These override .env because load_dotenv() never replaces variables that are already set.
+os.environ.update({
+    "USE_LIVE_LLM": "false",
+    "USE_LIVE_WEB": "false",
+    "USE_DETERMINISTIC_MODE": "true",
+    "ALLOW_OFFLINE_FALLBACK": "false",
+    "CHROMA_PERSIST_DIR": tempfile.mkdtemp(prefix="opsmind_test_chroma_"),
+})
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -26,7 +37,7 @@ def run_all_tests():
         ("MCP Tools & Protocol Discovery", "tests.test_mcp_tools"),
         ("ChromaDB RAG Pipeline & Embeddings", "tests.test_rag_pipeline"),
         ("LangGraph 5-Agent Research Workflow", "tests.test_agent_graph"),
-        ("RAGAS Evaluation & Custom Metrics", "tests.test_evals_ragas"),
+        ("Evaluation Metrics & Judge", "tests.test_evals"),
         ("FastAPI Backend Endpoints", "tests.test_api"),
     ]
 

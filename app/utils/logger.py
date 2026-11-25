@@ -3,8 +3,6 @@ Universal logging & tracing wrapper.
 Provides logfire-compatible interface with graceful fallback to standard Python logging.
 """
 
-import os
-import sys
 import logging
 from contextlib import contextmanager
 
@@ -14,7 +12,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
     datefmt="%H:%M:%S"
 )
-logger = logging.getLogger("incident_system")
+logger = logging.getLogger("opsmind")
 
 class DummySpan:
     def __enter__(self):

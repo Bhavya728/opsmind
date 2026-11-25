@@ -3,7 +3,7 @@ MCP Tool Schemas for OpsMind Agentic Research System.
 Provides strict Pydantic schemas for input validation and MCP tool registry discovery.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -14,8 +14,12 @@ class WebSearchInput(BaseModel):
         description="Search query string to search for recent articles, documentation, or external benchmarks."
     )
     num_results: Optional[int] = Field(
-        3,
-        description="Maximum number of search results to return (default 3, max 5)."
+        None,
+        description="Maximum number of search results to return (defaults to WEB_TOP_K, capped at MAX_TOOL_RESULTS)."
+    )
+    recent: Optional[bool] = Field(
+        False,
+        description="Restrict results to the last WEB_RECENT_TIME_RANGE (for time-sensitive questions)."
     )
 
 
@@ -30,8 +34,8 @@ class KnowledgeSearchInput(BaseModel):
         description="Optional filter by category (e.g., 'evaluation', 'architecture', 'infrastructure', 'retrieval', 'security', 'prompting')."
     )
     limit: Optional[int] = Field(
-        3,
-        description="Number of relevant document chunks to retrieve (default 3, max 5)."
+        None,
+        description="Number of relevant document chunks to retrieve (defaults to RAG_TOP_K, capped at MAX_TOOL_RESULTS)."
     )
 
 
@@ -57,8 +61,7 @@ MCP_TOOL_DEFINITIONS = [
                 },
                 "num_results": {
                     "type": "integer",
-                    "description": "Max results to return (1-5)",
-                    "default": 3
+                    "description": "Max results to return (defaults to WEB_TOP_K)"
                 }
             },
             "required": ["query"]
@@ -81,8 +84,7 @@ MCP_TOOL_DEFINITIONS = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of chunks to return (1-5)",
-                    "default": 3
+                    "description": "Number of chunks to return (defaults to RAG_TOP_K)"
                 }
             },
             "required": ["query"]
@@ -102,14 +104,4 @@ MCP_TOOL_DEFINITIONS = [
             "required": ["doc_id"]
         }
     }
-]
-
-VALID_CATEGORIES = [
-    "evaluation",
-    "architecture",
-    "infrastructure",
-    "retrieval",
-    "security",
-    "prompting",
-    "general"
 ]

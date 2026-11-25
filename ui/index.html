@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpsMind</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f0efec;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --line: #e1e0d9; --line-strong: #c3c2b7;
+    --accent: #2a78d6; --accent-ink: #1c5cab; --accent-wash: rgba(42, 120, 214, 0.10);
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 2px 8px rgba(11, 11, 11, 0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
+      --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+      --line: #2c2c2a; --line-strong: #383835;
+      --accent: #3987e5; --accent-ink: #86b6ef; --accent-wash: rgba(57, 135, 229, 0.14);
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scrollbar-gutter: stable; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent-ink); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { font: inherit; color: inherit; }
+  code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.88em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; }
+  pre code { background: none; padding: 0; }
+  [hidden] { display: none !important; }
+
+  /* Header */
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--page) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 860px; margin: 0 auto; padding: 0 20px; height: 56px; display: flex; align-items: center; gap: 24px; }
+  .brand { font-weight: 700; letter-spacing: -0.01em; }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: none; padding: 6px 10px; border-radius: 6px; color: var(--ink-2); cursor: pointer; }
+  nav button:hover { background: var(--surface-2); }
+  nav button[aria-current="page"] { color: var(--ink); font-weight: 600; }
+  .status { margin-left: auto; font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.ok { background: var(--good); }
+  .dot.bad { background: var(--critical); }
+
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  .view[hidden] { display: none; }
+  h1 { font-size: 1.6rem; letter-spacing: -0.02em; margin: 24px 0 18px; font-weight: 650; }
+  h2 { font-size: 1.05rem; margin: 32px 0 10px; }
+
+  /* Ask box */
+  .ask { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 4px; }
+  .ask:focus-within { border-color: var(--accent); }
+  .ask textarea { width: 100%; border: none; background: none; resize: none; padding: 12px 14px 4px; font: inherit; color: inherit; min-height: 52px; max-height: 260px; outline: none; }
+  .ask-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 4px 6px 6px; }
+  .hint { font-size: 0.78rem; color: var(--muted); }
+  .btn { border: 1px solid var(--line-strong); background: var(--surface); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.small { padding: 3px 10px; font-size: 0.82rem; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .examples button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 0.85rem; color: var(--ink-2); cursor: pointer; }
+  .examples button:hover { border-color: var(--line-strong); color: var(--ink); }
+
+  /* Progress */
+  .progress { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--muted); }
+  .step { display: inline-flex; align-items: center; gap: 6px; }
+  .step.done { color: var(--ink-2); }
+  .step.running { color: var(--ink); font-weight: 600; }
+  .step .ico { width: 14px; text-align: center; }
+  .step.done .ico { color: var(--good); }
+  .step .t { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Messages */
+  .note { margin-top: 20px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 0.92rem; }
+  .note.error { border-color: color-mix(in srgb, var(--critical) 45%, var(--line)); }
+  .note.warn { border-color: color-mix(in srgb, var(--warning) 55%, var(--line)); }
+  .note::before { margin-right: 6px; }
+  .note.error::before { content: "✕"; color: var(--critical); }
+  .note.warn::before { content: "!"; font-weight: 700; color: var(--warning); }
+
+  /* Answer */
+  .answer { margin-top: 26px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 8px 28px 18px; }
+  .answer .md h2, .answer .md h3, .answer .md h4 { margin: 22px 0 6px; }
+  .answer .md h2 { font-size: 1.2rem; }
+  .answer .md h3 { font-size: 1.05rem; }
+  .answer .md h4 { font-size: 0.95rem; }
+  .md p { margin: 10px 0; }
+  .md ul, .md ol { padding-left: 22px; }
+  .md li { margin: 4px 0; }
+  .md blockquote { margin: 10px 0; padding-left: 14px; border-left: 3px solid var(--line-strong); color: var(--ink-2); }
+  .md table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9rem; display: block; overflow-x: auto; }
+  .md th, .md td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .md th { font-weight: 600; border-bottom-color: var(--line-strong); }
+  .cite { display: inline-block; min-width: 18px; padding: 0 5px; margin: 0 1px; border-radius: 5px; background: var(--accent-wash); color: var(--accent-ink); font-size: 0.72rem; font-weight: 600; line-height: 17px; text-align: center; vertical-align: 2px; }
+  .cite:hover { text-decoration: none; background: var(--accent); color: #fff; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; font-size: 0.84rem; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .meta .btn { margin-left: auto; }
+
+  /* Sources */
+  .sources { list-style: none; padding: 0; margin: 0; counter-reset: src; }
+  .sources li { border-bottom: 1px solid var(--line); scroll-margin-top: 80px; }
+  .sources li:target summary, .sources li.flash summary { background: var(--accent-wash); }
+  .sources summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: baseline; padding: 10px 8px; border-radius: 8px; }
+  .sources summary::-webkit-details-marker { display: none; }
+  .sources summary:hover { background: var(--surface-2); }
+  .num { color: var(--muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  .src-title { font-weight: 550; }
+  .src-where { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+  .excerpt { margin: 0 8px 14px 44px; font-size: 0.88rem; color: var(--ink-2); white-space: pre-wrap; max-height: 260px; overflow-y: auto; }
+
+  /* Details */
+  details.more { margin-top: 28px; }
+  details.more > summary { cursor: pointer; color: var(--ink-2); font-size: 0.9rem; width: fit-content; }
+  details.more > summary:hover { color: var(--ink); }
+  .more-body { margin-top: 6px; font-size: 0.9rem; }
+  .more-body h3 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+  .rows { list-style: none; padding: 0; margin: 0; }
+  .rows li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .rows li:last-child { border-bottom: none; }
+  .rows .k { color: var(--ink-2); flex: 1; }
+  .rows .v { font-variant-numeric: tabular-nums; color: var(--ink); }
+  .verdict { flex-shrink: 0; width: 100px; font-size: 0.8rem; display: inline-flex; gap: 5px; align-items: baseline; color: var(--ink-2); }
+  .verdict i { font-style: normal; width: 12px; text-align: center; }
+  .v-supported i { color: var(--good); }
+  .v-partial i { color: var(--warning); }
+  .v-unsupported i { color: var(--critical); }
+  .v-uncited i { color: var(--muted); }
+  .plain { padding-left: 18px; margin: 0; }
+  .plain li { margin: 3px 0; }
+
+  /* Lists for KB / evals */
+  .search { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; margin-bottom: 14px; outline: none; }
+  .search:focus { border-color: var(--accent); }
+  .list { list-style: none; padding: 0; margin: 0; }
+  .list > li { border-bottom: 1px solid var(--line); }
+  .list summary { list-style: none; cursor: pointer; padding: 11px 6px; display: flex; gap: 12px; align-items: baseline; border-radius: 6px; }
+  .list summary::-webkit-details-marker { display: none; }
+  .list summary:hover { background: var(--surface-2); }
+  .list .grow { flex: 1; min-width: 0; }
+  .tag { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+  .list .body { padding: 2px 6px 16px; font-size: 0.92rem; }
+  .empty { color: var(--muted); padding: 18px 0; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 12px 40px; margin: 8px 0 6px; }
+  .stat .label { font-size: 0.8rem; color: var(--muted); }
+  .stat .value { font-size: 1.8rem; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .caption { font-size: 0.8rem; color: var(--muted); }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 32px; }
+  .metric { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+  .metric .k { color: var(--ink-2); }
+  .metric .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .meter { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+  .meter span { display: block; height: 100%; background: var(--accent); border-radius: 0 2px 2px 0; }
+  .toggle { display: inline-flex; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--ink-2); cursor: pointer; margin-bottom: 8px; }
+  .pass { color: var(--good); }
+  .fail { color: var(--critical); }
+
+  @media (max-width: 600px) {
+    .bar { gap: 12px; }
+    .status span { display: none; }
+    .answer { padding: 4px 16px 14px; }
+    .sources summary { grid-template-columns: 22px 1fr; }
+    .src-where { grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">OpsMind</div>
+    <nav>
+      <button data-view="research" aria-current="page">Research</button>
+      <button data-view="kb">Knowledge base</button>
+      <button data-view="evals">Evaluations</button>
+    </nav>
+    <div class="status" id="status" title=""><i class="dot"></i><span>Connecting…</span></div>
+  </div>
+</header>
+
+<main>
+  <!-- RESEARCH -->
+  <section class="view" id="view-research">
+    <h1 id="ask-title">What do you want to research?</h1>
+    <form class="ask" id="ask">
+      <textarea id="query" rows="2" placeholder="Ask a technical question…" aria-label="Research question"></textarea>
+      <div class="ask-row">
+        <span class="hint">Ctrl + Enter</span>
+        <button type="submit" class="btn primary" id="submit">Research</button>
+      </div>
+    </form>
+    <div class="examples" id="examples">
+      <button type="button">What are the main approaches and metrics for RAG evaluation?</button>
+      <button type="button">Compare agentic RAG with traditional RAG.</button>
+      <button type="button">What does a production LLM gateway do?</button>
+    </div>
+    <div class="progress" id="progress" aria-live="polite" hidden></div>
+    <div id="out"></div>
+  </section>
+
+  <!-- KNOWLEDGE BASE -->
+  <section class="view" id="view-kb" hidden>
+    <h1>Knowledge base</h1>
+    <input class="search" id="kb-search" type="search" placeholder="Filter documents…" aria-label="Filter documents">
+    <ul class="list" id="kb-list"><li class="empty">Loading…</li></ul>
+    <p class="caption" id="kb-hint"></p>
+  </section>
+
+  <!-- EVALUATIONS -->
+  <section class="view" id="view-evals" hidden>
+    <h1>Evaluations</h1>
+    <div id="evals"><p class="empty">Loading…</p></div>
+  </section>
+</main>
+
+<script>
+const $ = (s, root = document) => root.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pct = (v) => (v === null || v === undefined) ? "n/a" : `${Math.round(v * 100)}%`;
+const secs = (v) => `${Number(v || 0).toFixed(1)}s`;
+const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : null;
+const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  let body = null;
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok) throw new Error((body && body.detail) || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+// ---------- Markdown (input is escaped first; only a safe subset is formatted) ----------
+function inline(s, cites) {
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>")
+       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+       .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
+       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  if (cites) {
+    s = s.replace(/\[Sources?:\s*([^\]]+?)\s*\]/g, (m, ids) => ids.split(/\s*,\s*/).map((id) => {
+      const c = cites[id];
+      return c ? `<a class="cite" href="#src-${c.n}" data-src="${c.n}" title="${esc(c.title)}">${c.n}</a>` : "";
+    }).join(""));
+  }
+  return s;
+}
+
+function md(text, cites) {
+  const lines = esc(text).split(/\r?\n/);
+  const out = [];
+  let list = null, para = [], code = null, quote = [];
+  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(" "), cites)}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const flushQuote = () => { if (quote.length) { out.push(`<blockquote>${inline(quote.join(" "), cites)}</blockquote>`); quote = []; } };
+  const flush = () => { flushPara(); flushList(); flushQuote(); };
+  const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().startsWith("```")) {
+      if (code) { out.push(`<pre><code>${code.join("\n")}</code></pre>`); code = null; }
+      else { flush(); code = []; }
+      continue;
+    }
+    if (code) { code.push(line); continue; }
+    let m;
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || "") && (lines[i + 1] || "").includes("-")) {
+      flush();
+      const head = cells(line);
+      i += 1;
+      const rows = [];
+      while (i + 1 < lines.length && /^\s*\|.*\|\s*$/.test(lines[i + 1])) rows.push(cells(lines[++i]));
+      out.push(`<table><thead><tr>${head.map((h) => `<th>${inline(h, cites)}</th>`).join("")}</tr></thead><tbody>${
+        rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c, cites)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+    } else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      flush();
+      const lvl = Math.min(m[1].length + 1, 4);
+      out.push(`<h${lvl}>${inline(m[2], cites)}</h${lvl}>`);
+    } else if ((m = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)$/))) {
+      flushPara(); flushQuote();
+      const type = /^\s*\d/.test(line) ? "ol" : "ul";
+      if (list !== type) { flushList(); out.push(`<${type}>`); list = type; }
+      out.push(`<li>${inline(m[1], cites)}</li>`);
+    } else if ((m = line.match(/^\s*&gt;\s?(.*)$/))) {
+      flushPara(); flushList(); quote.push(m[1]);
+    } else if (/^\s*(---|\*\*\*|___)\s*$/.test(line) || !line.trim()) {
+      flush();
+    } else {
+      flushList(); flushQuote(); para.push(line.trim());
+    }
+  }
+  if (code) out.push(`<pre><code>${code.join("\n")}</code></pre>`);
+  flush();
+  return out.join("\n");
+}
+
+// ---------- Navigation ----------
+const loaders = { kb: loadKb, evals: loadEvals };
+const loaded = {};
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach((x) => (x === b ? x.setAttribute("aria-current", "page") : x.removeAttribute("aria-current")));
+  document.querySelectorAll(".view").forEach((v) => { v.hidden = v.id !== `view-${b.dataset.view}`; });
+  const load = loaders[b.dataset.view];
+  if (load && !loaded[b.dataset.view]) { loaded[b.dataset.view] = true; load(); }
+}));
+
+// ---------- Status ----------
+(async function loadStatus() {
+  const el = $("#status");
+  try {
+    const s = await api("/status");
+    const live = s.mode === "live";
+    el.innerHTML = `<i class="dot ok"></i><span>${live ? esc(s.llm_backend) : "offline mode"}</span>`;
+    el.title = [
+      `Mode: ${s.mode}`,
+      s.llm_models ? `Models: ${s.llm_models.fast} / ${s.llm_models.strong}` : null,
+      `Web search: ${s.web_search}`,
+      `Knowledge base: ${s.vector_store.documents} documents`,
+    ].filter(Boolean).join("\n");
+  } catch (e) {
+    el.innerHTML = `<i class="dot bad"></i><span>API unreachable</span>`;
+    el.title = e.message;
+  }
+})();
+
+// ---------- Research ----------
+const STEPS = {
+  input_guardrail: "Safety check",
+  query_planner: "Planning",
+  web_research: "Web search",
+  rag_knowledge: "Knowledge base",
+  evidence_critic: "Checking evidence",
+  report_generator: "Writing report",
+  claim_verifier: "Verifying claims",
+};
+const RETRIEVAL = ["web_research", "rag_knowledge"];
+let controller = null;
+let timer = null;
+
+const queryEl = $("#query");
+const autoGrow = () => { queryEl.style.height = "auto"; queryEl.style.height = `${queryEl.scrollHeight}px`; };
+queryEl.addEventListener("input", autoGrow);
+queryEl.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("#ask").requestSubmit(); } });
+document.querySelectorAll("#examples button").forEach((b) => b.addEventListener("click", () => {
+  queryEl.value = b.textContent; autoGrow(); $("#ask").requestSubmit();
+}));
+$("#ask").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (controller) { controller.abort(); return; }
+  research(queryEl.value.trim());
+});
+
+function setBusy(busy) {
+  $("#submit").textContent = busy ? "Stop" : "Research";
+  $("#submit").classList.toggle("primary", !busy);
+}
+
+// Tracks which steps have finished and which are expected to run next.
+function createTracker() {
+  const start = performance.now();
+  const steps = {};           // node -> times finished
+  let routes = RETRIEVAL;     // retrieval agents the planner chose
+  let running = new Set(["input_guardrail"]);
+
+  const render = () => {
+    const elapsed = (performance.now() - start) / 1000;
+    const order = Object.keys(STEPS).filter((n) => steps[n] || running.has(n));
+    $("#progress").innerHTML = order.map((n) => {
+      const isRunning = running.has(n);
+      const ico = isRunning ? '<span class="spinner"></span>' : "✓";
+      const count = steps[n] > 1 ? ` ×${steps[n]}` : "";
+      return `<span class="step ${isRunning ? "running" : "done"}"><span class="ico">${ico}</span>${STEPS[n]}${count}</span>`;
+    }).join("") + `<span class="step"><span class="t">${secs(elapsed)}</span></span>`;
+  };
+
+  return {
+    render,
+    update(ev) {
+      steps[ev.node] = (steps[ev.node] || 0) + 1;
+      running.delete(ev.node);
+      const info = ev.info || {};
+      switch (ev.node) {
+        case "input_guardrail": running = new Set(["query_planner"]); break;
+        case "query_planner":
+          if (info.in_scope === false) { running = new Set(); break; }
+          routes = RETRIEVAL.filter((n) => (n === "web_research" ? info.need_web : info.need_rag));
+          running = new Set(routes.length ? routes : ["evidence_critic"]);
+          break;
+        case "web_research": case "rag_knowledge":
+          if (![...running].some((n) => RETRIEVAL.includes(n))) running = new Set(["evidence_critic"]);
+          break;
+        case "evidence_critic":
+          running = new Set((info.followup_queries || []).length && routes.length ? routes : ["report_generator"]);
+          break;
+        case "report_generator": running = new Set(["claim_verifier"]); break;
+        case "claim_verifier": running = new Set(info.revision_pending ? ["report_generator"] : []); break;
+      }
+      render();
+    },
+    stop() { running = new Set(); render(); },
+  };
+}
+
+async function research(query) {
+  if (!query) { queryEl.focus(); return; }
+  const out = $("#out");
+  const progress = $("#progress");
+  out.innerHTML = "";
+  $("#examples").hidden = true;
+  progress.hidden = false;
+  setBusy(true);
+
+  const tracker = createTracker();
+  tracker.render();
+  timer = setInterval(tracker.render, 250);
+  controller = new AbortController();
+
+  try {
+    const res = await fetch("/research/stream", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }), signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`;
+      try { detail = (await res.json()).detail || detail; } catch { /* keep status */ }
+      throw new Error(detail);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", done = false;
+    while (!done) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const raw = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (!raw.startsWith("data: ")) continue;
+        const ev = JSON.parse(raw.slice(6));
+        if (ev.type === "node") tracker.update(ev);
+        else if (ev.type === "result") { showResult(ev.data); done = true; }
+        else if (ev.type === "error") throw new Error(ev.detail);
+      }
+    }
+    if (!done) throw new Error("The connection closed before the research finished.");
+    progress.hidden = true;
+  } catch (e) {
+    tracker.stop();
+    out.innerHTML = e.name === "AbortError"
+      ? `<div class="note">Stopped.</div>`
+      : `<div class="note error">${esc(e.message)}</div>`;
+  } finally {
+    clearInterval(timer);
+    controller = null;
+    setBusy(false);
+  }
+}
+
+function showResult(r) {
+  const out = $("#out");
+  if (r.guardrail_blocked) {
+    out.innerHTML = `<div class="note warn">${esc(String(r.answer || "This question was blocked.").replace(/^🛡️\s*/, ""))}</div>`;
+    return;
+  }
+  const sources = r.sources || [];
+  const cites = {};
+  sources.forEach((s, i) => { cites[s.id] = { n: i + 1, title: s.title }; });
+
+  const claims = r.claims || [];
+  const supported = claims.filter((c) => c.verdict === "supported").length;
+  const metaParts = [
+    `Confidence <b>${pct(r.confidence)}</b>`,
+    claims.length ? `<b>${supported}/${claims.length}</b> claims supported` : null,
+    `<b>${sources.length}</b> source${sources.length === 1 ? "" : "s"}`,
+    `<b>${secs((r.latencies || {}).total)}</b>`,
+  ].filter(Boolean);
+
+  let h = (r.warnings || []).map((w) => `<div class="note warn">${esc(w)}</div>`).join("");
+  h += `<article class="answer">
+    <div class="md">${md(r.answer || "", cites)}</div>
+    <div class="meta">${metaParts.map((p) => `<span>${p}</span>`).join("<span>·</span>")}<button class="btn small" id="copy">Copy</button></div>
+  </article>`;
+
+  if (sources.length) {
+    h += `<h2>Sources</h2><ol class="sources">${sources.map((s, i) => {
+      const url = safeUrl(s.url);
+      const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(host(url))} ↗</a>` : "Knowledge base";
+      return `<li id="src-${i + 1}"><details>
+        <summary><span class="num">${i + 1}</span><span class="src-title">${esc(s.title)}</span><span class="src-where">${where}</span></summary>
+        ${s.content ? `<div class="excerpt">${esc(s.content)}</div>` : ""}
+      </details></li>`;
+    }).join("")}</ol>`;
+  }
+
+  h += detailsHtml(r);
+  out.innerHTML = h;
+
+  $("#copy").addEventListener("click", async (e) => {
+    const plain = (r.answer || "").replace(/\s*\[Sources?:\s*([^\]]+?)\s*\]/g, (m, ids) =>
+      ids.split(/\s*,\s*/).map((id) => (cites[id] ? `[${cites[id].n}]` : "")).join(""));
+    await navigator.clipboard.writeText(plain);
+    e.target.textContent = "Copied";
+    setTimeout(() => { e.target.textContent = "Copy"; }, 1500);
+  });
+  out.querySelectorAll(".cite").forEach((a) => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const li = $(`#src-${a.dataset.src}`);
+    li.querySelector("details").open = true;
+    li.scrollIntoView({ behavior: "smooth", block: "center" });
+    li.classList.add("flash");
+    setTimeout(() => li.classList.remove("flash"), 1400);
+  }));
+}
+
+function detailsHtml(r) {
+  const parts = [];
+  const icons = { supported: "✓", partial: "◐", unsupported: "✕", uncited: "○" };
+  if ((r.claims || []).length) {
+    const claimText = (t) => inline(esc(String(t || "").replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")));
+    parts.push(`<h3>Claim check</h3><ul class="rows">${r.claims.map((c) =>
+      `<li><span class="verdict v-${esc(c.verdict)}"><i>${icons[c.verdict] || "•"}</i>${esc(c.verdict)}</span><span class="k">${claimText(c.claim)}</span></li>`).join("")}</ul>`);
+  }
+  if ((r.plan || []).length) {
+    parts.push(`<h3>Plan</h3><ol class="plain">${r.plan.map((p) => `<li>${esc(p)}</li>`).join("")}</ol>`);
+  }
+  if ((r.evidence_gaps || []).length) {
+    parts.push(`<h3>Evidence gaps</h3><ul class="plain">${r.evidence_gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul>`);
+  }
+  if ((r.rejected_sources || []).length) {
+    parts.push(`<h3>Sources not used</h3><ul class="plain">${r.rejected_sources.map((s) => `<li>${esc(s.title)}</li>`).join("")}</ul>`);
+  }
+  const lat = Object.entries(r.latencies || {}).filter(([k]) => k !== "total");
+  if (lat.length) {
+    const TIMING = { guardrail: "Safety check", planner: "Planning", rag: "Knowledge base", web: "Web search",
+      critic: "Checking evidence", synthesis: "Writing report", verification: "Verifying claims" };
+    const name = (k) => {
+      const [, base, round, rev] = k.match(/^(.*?)(?:_r(\d+)|_rev(\d+))?$/);
+      const label = TIMING[base] || STEPS[base] || base.replace(/_/g, " ");
+      return label + (round ? ` (round ${round})` : rev ? ` (revision ${rev})` : "");
+    };
+    parts.push(`<h3>Timing</h3><ul class="rows">${lat.map(([k, v]) => `<li><span class="k">${esc(name(k))}</span><span class="v">${secs(v)}</span></li>`).join("")}
+      ${(r.token_usage || {}).total ? `<li><span class="k">Tokens used</span><span class="v">${Number(r.token_usage.total).toLocaleString()}</span></li>` : ""}</ul>`);
+  }
+  return parts.length ? `<details class="more"><summary>Details</summary><div class="more-body">${parts.join("")}</div></details>` : "";
+}
+
+// ---------- Knowledge base ----------
+let kbDocs = [];
+async function loadKb() {
+  try {
+    const { knowledge_dir, documents } = await api("/knowledge/documents");
+    kbDocs = documents;
+    $("#kb-hint").innerHTML = `Add .md or .txt files to <code>${esc(knowledge_dir)}</code> (sub-folder = category). They are indexed on the next server start.`;
+    renderKb();
+  } catch (e) {
+    $("#kb-list").innerHTML = `<li class="note error">${esc(e.message)}</li>`;
+  }
+}
+function renderKb() {
+  const q = $("#kb-search").value.trim().toLowerCase();
+  const docs = kbDocs.filter((d) => !q || [d.title, d.category, d.summary, (d.tags || []).join(" ")].join(" ").toLowerCase().includes(q));
+  $("#kb-list").innerHTML = docs.length ? docs.map((d) => `<li><details>
+    <summary><span class="grow">${esc(d.title)}</span><span class="tag">${esc(d.category || "")}</span></summary>
+    <div class="body md">${d.summary ? `<p><em>${esc(d.summary)}</em></p>` : ""}${md(d.content || "")}</div>
+  </details></li>`).join("") : `<li class="empty">No documents match.</li>`;
+}
+$("#kb-search").addEventListener("input", renderKb);
+
+// ---------- Evaluations ----------
+let evalData = null;
+async function loadEvals() {
+  const el = $("#evals");
+  try {
+    evalData = (await api("/evals/results")).results;
+  } catch (e) {
+    el.innerHTML = `<div class="note error">${esc(e.message)}</div>`;
+    return;
+  }
+  if (!evalData || !evalData.summary) {
+    el.innerHTML = `<p class="empty">No results yet. Run <code>python evals/evaluator.py</code> to create them.</p>`;
+    return;
+  }
+  const d = evalData, s = d.summary;
+  const metric = (k, v) => `<div class="metric"><span class="k">${k}</span><span class="v">${pct(v)}</span>
+    <div class="meter"><span style="width:${v == null ? 0 : Math.max(0, Math.min(1, v)) * 100}%"></span></div></div>`;
+  el.innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="label">Overall score</div><div class="value">${pct(d.overall_score)}</div></div>
+      <div class="stat"><div class="label">Passed</div><div class="value">${esc(d.passed_cases)}/${esc(d.total_cases)}</div></div>
+      <div class="stat"><div class="label">Avg. latency</div><div class="value">${secs(s.average_latency_sec)}</div></div>
+    </div>
+    <p class="caption">Run ${esc(d.timestamp)}${d.error_cases ? ` · ${esc(d.error_cases)} errored` : ""}</p>
+    <h2>Answer quality</h2>
+    <div class="metrics">${metric("Correctness", s.correctness)}${metric("Faithfulness", s.faithfulness)}${metric("Relevance", s.relevance)}</div>
+    <h2>System checks</h2>
+    <div class="metrics">${metric("Routing recall", s.routing_recall)}${metric("Source recall", s.source_recall)}${metric("Source precision", s.source_precision)}${metric("Cites sources", s.cites_sources)}${metric("Guardrail accuracy", s.guardrail_accuracy)}</div>
+    <h2>Cases</h2>
+    <label class="toggle"><input type="checkbox" id="show-all"> Show passing cases</label>
+    <ul class="list" id="cases"></ul>`;
+  $("#show-all").addEventListener("change", renderCases);
+  renderCases();
+}
+function renderCases() {
+  const all = $("#show-all").checked;
+  const cases = (evalData.case_results || []).filter((c) => all || c.status !== "ok" || !c.passed);
+  $("#cases").innerHTML = cases.length ? cases.map((c) => {
+    const err = c.status !== "ok";
+    const mark = err ? '<span class="fail">Error</span>' : (c.passed ? '<span class="pass">Pass</span>' : '<span class="fail">Fail</span>');
+    const judge = c.judge || {};
+    const body = err ? `<div class="note error">${esc(c.error)}</div>` : `
+      ${judge.notes ? `<p>${esc(judge.notes)}</p>` : ""}
+      ${(judge.unsupported_examples || []).length ? `<ul class="plain">${judge.unsupported_examples.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <ul class="rows">${Object.entries(c.metrics || {}).filter(([, v]) => typeof v !== "object").map(([k, v]) =>
+        `<li><span class="k">${esc(k.replace(/_/g, " "))}</span><span class="v">${typeof v === "number" && v <= 1 && v >= 0 && !Number.isInteger(v) ? pct(v) : esc(v)}</span></li>`).join("")}</ul>`;
+    return `<li><details><summary><span class="tag">#${esc(c.id)}</span><span class="grow">${esc(c.question)}</span>${mark}</summary>
+      <div class="body">${body}</div></details></li>`;
+  }).join("") : `<li class="empty">Every case passed.</li>`;
+}
+</script>
+</body>
+</html>

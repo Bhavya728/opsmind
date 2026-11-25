@@ -4,15 +4,14 @@ Uses the official Python MCP SDK (FastMCP) to expose research, knowledge retriev
 and document lookup tools with explicit JSON schemas and standard protocol handlers.
 """
 
-import os
+import re
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
 
-from app.services.retrieval.chroma_service import chroma_service
-from app.data.knowledge_base import WEB_KNOWLEDGE_INDEX, KNOWLEDGE_DOCUMENTS
+from app.config import settings
+from app.services.retrieval.chroma_service import chroma_service, _terms
+from app.data.knowledge_base import WEB_KNOWLEDGE_INDEX
 from app.utils.logger import logfire
-import re
 
 # Instantiate official FastMCP server
 mcp_server = FastMCP(
@@ -21,88 +20,125 @@ mcp_server = FastMCP(
 )
 
 
-def raw_web_search(query: str, num_results: int = 3) -> Dict[str, Any]:
-    """Execute underlying web search against indexed research database or live web."""
-    query_clean = query.strip().lower()
-    max_res = min(max(1, num_results or 3), 5)
-    
-    use_live_web = os.getenv("USE_LIVE_WEB", "false").lower() == "true"
-    if use_live_web:
-        try:
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                raw_results = list(ddgs.text(query_clean, max_results=max_res))
-                if raw_results:
-                    formatted = [
-                        {
-                            "title": r.get("title", ""),
-                            "url": r.get("href", ""),
-                            "snippet": r.get("body", ""),
-                            "source_type": "web"
-                        }
-                        for r in raw_results
-                    ]
-                    return {
-                        "status": "success",
-                        "tool": "web_search",
-                        "query": query,
-                        "count": len(formatted),
-                        "results": formatted
-                    }
-        except Exception as e:
-            logfire.info(f"🌐 Live web search skipped ({e}); using indexed web research database.")
+def _clamp(value: Optional[int], default: int) -> int:
+    return min(max(1, value or default), settings.MAX_TOOL_RESULTS)
 
-    # High-precision indexed web research database (instant, offline-reliable)
-    scored_results = []
-    keywords = set(re.findall(r"\w+", query_clean))
-    
+
+AD_URL_PATTERN = re.compile(r"/aclick\?|[?&]ad_domain=|duckduckgo\.com/y\.js")
+TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+
+
+def _tavily_search(query: str, max_res: int, recent: bool = False) -> List[Dict[str, Any]]:
+    """Search via the Tavily API (requires TAVILY_API_KEY)."""
+    import httpx
+
+    if not (settings.TAVILY_API_KEY or "").strip():
+        raise RuntimeError("WEB_SEARCH_PROVIDER=tavily but TAVILY_API_KEY is not set.")
+    response = httpx.post(
+        TAVILY_SEARCH_URL,
+        headers={"Authorization": f"Bearer {settings.TAVILY_API_KEY.strip()}"},
+        json={"query": query, "max_results": max_res, "search_depth": settings.TAVILY_SEARCH_DEPTH,
+              **({"time_range": settings.WEB_RECENT_TIME_RANGE} if recent else {})},
+        timeout=settings.WEB_SEARCH_TIMEOUT,
+    )
+    if response.status_code != 200:
+        # Never echo the request (it carries the key); the response body explains the error.
+        raise RuntimeError(f"Tavily HTTP {response.status_code}: {response.text[:200]}")
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+            "score": round(float(r["score"]), 3) if isinstance(r.get("score"), (int, float)) else None,
+            "source_type": "web",
+        }
+        for r in response.json().get("results", [])
+        if r.get("url")
+    ]
+
+
+def _ddgs_web_search(query: str, max_res: int, recent: bool = False) -> List[Dict[str, Any]]:
+    from ddgs import DDGS
+
+    # ddgs drops some engines when given a comma list, so try each configured engine in order.
+    client = DDGS(timeout=settings.WEB_SEARCH_TIMEOUT)
+    raw_results: List[Dict[str, Any]] = []
+    errors = []
+    for engine in [e.strip() for e in settings.WEB_SEARCH_BACKEND.split(",") if e.strip()]:
+        try:
+            raw_results = client.text(query, max_results=max_res, backend=engine,
+                                      timelimit=settings.WEB_RECENT_TIME_RANGE[0] if recent else None) or []
+        except Exception as e:
+            errors.append(f"{engine}: {e}")
+            continue
+        if raw_results:
+            break
+    if not raw_results and errors:
+        raise RuntimeError("; ".join(errors))
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("href", ""),
+            "snippet": r.get("body", ""),
+            "source_type": "web",
+        }
+        for r in raw_results
+        if r.get("href") and not AD_URL_PATTERN.search(r["href"])
+    ]
+
+
+def _offline_web_search(query: str, max_res: int, recent: bool = False) -> List[Dict[str, Any]]:
+    """Search the small built-in web index (offline/test mode only)."""
+    q_terms = _terms(query)
+    scored = []
     for item in WEB_KNOWLEDGE_INDEX:
-        item_text = f"{item['title']} {item['snippet']} {' '.join(item['keywords'])}".lower()
-        item_words = set(re.findall(r"\w+", item_text))
-        overlap = len(keywords & item_words)
-        
-        kw_matches = sum(1 for kw in item["keywords"] if kw in query_clean)
-        score = (overlap / (len(keywords) + 1)) + (0.4 * kw_matches)
-        
-        if score > 0.15:
-            scored_results.append({
-                "score": round(score, 2),
+        item_terms = _terms(f"{item['title']} {item['snippet']} {' '.join(item['keywords'])}")
+        coverage = len(q_terms & item_terms) / len(q_terms) if q_terms else 0.0
+        if coverage >= settings.MIN_RELEVANCE_SCORE:
+            scored.append({
+                "score": round(coverage, 3),
                 "title": item["title"],
                 "url": item["url"],
                 "snippet": item["snippet"],
-                "source_type": "web_article"
+                "source_type": "web_article",
             })
-            
-    scored_results.sort(key=lambda x: x["score"], reverse=True)
-    results = scored_results[:max_res]
-    
-    if not results:
-        results = [{
-            "title": f"Web Research Findings: {query.capitalize()}",
-            "url": "https://arxiv.org/abs/search",
-            "snippet": f"Recent technical literature regarding '{query}' emphasizes modular agentic workflows, deterministic guardrails, and automated evaluation frameworks.",
-            "source_type": "web_article"
-        }]
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:max_res]
+
+
+def raw_web_search(query: str, num_results: Optional[int] = None, recent: bool = False) -> Dict[str, Any]:
+    """Search the live web (USE_LIVE_WEB=true) or the built-in offline index. Never fabricates results."""
+    max_res = _clamp(num_results, settings.WEB_TOP_K)
+    backend = settings.ACTIVE_WEB_PROVIDER
+    search_fns = {"tavily": _tavily_search, "ddgs": _ddgs_web_search, "offline_index": _offline_web_search}
+    try:
+        if backend not in search_fns:
+            raise ValueError(f"Unknown WEB_SEARCH_PROVIDER '{backend}'; use tavily, ddgs or auto.")
+        results = search_fns[backend](query.strip(), max_res, recent)
+    except Exception as e:
+        logfire.warning(f"🌐 Web search failed ({backend}): {e}")
+        return {"status": "error", "tool": "web_search", "backend": backend, "query": query,
+                "count": 0, "results": [], "error": str(e)}
 
     return {
         "status": "success",
         "tool": "web_search",
+        "backend": backend,
         "query": query,
         "count": len(results),
-        "results": results
+        "results": results,
     }
 
 
-def raw_knowledge_search(query: str, category: Optional[str] = None, limit: int = 3) -> Dict[str, Any]:
+def raw_knowledge_search(query: str, category: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """Execute semantic similarity retrieval against ChromaDB knowledge store."""
-    max_res = min(max(1, limit or 3), 5)
-    hits = chroma_service.query(query_text=query, n_results=max_res, category=category)
+    hits = chroma_service.query(query_text=query, n_results=_clamp(limit, settings.RAG_TOP_K), category=category)
     return {
         "status": "success",
         "tool": "knowledge_search",
         "query": query,
         "count": len(hits),
-        "results": hits
+        "results": hits,
     }
 
 
@@ -110,16 +146,16 @@ def raw_document_lookup(doc_id: str) -> Dict[str, Any]:
     """Fetch full structured knowledge document by doc_id."""
     doc_id_clean = doc_id.strip()
     doc = chroma_service.get_document(doc_id_clean)
-    
+
     if not doc:
-        available_ids = [d["id"] for d in KNOWLEDGE_DOCUMENTS]
+        available_ids = [d["id"] for d in chroma_service.list_documents()]
         return {
             "status": "not_found",
             "tool": "document_lookup",
             "doc_id": doc_id_clean,
             "message": f"Document '{doc_id_clean}' not found. Available documents: {available_ids}"
         }
-        
+
     return {
         "status": "success",
         "tool": "document_lookup",
@@ -134,13 +170,13 @@ def raw_document_lookup(doc_id: str) -> Dict[str, Any]:
 
 # Register MCP tools on FastMCP server instance
 @mcp_server.tool(name="web_search", description="Search external technical literature, web articles, and benchmarks.")
-def mcp_tool_web_search(query: str, num_results: int = 3) -> Dict[str, Any]:
-    """MCP Tool: Web Search"""
-    return raw_web_search(query=query, num_results=num_results)
+def mcp_tool_web_search(query: str, num_results: Optional[int] = None, recent: bool = False) -> Dict[str, Any]:
+    """MCP Tool: Web Search (recent=True restricts results to WEB_RECENT_TIME_RANGE)"""
+    return raw_web_search(query=query, num_results=num_results, recent=recent)
 
 
 @mcp_server.tool(name="knowledge_search", description="Search internal technical knowledge base using ChromaDB dense semantic vector similarity.")
-def mcp_tool_knowledge_search(query: str, category: Optional[str] = None, limit: int = 3) -> Dict[str, Any]:
+def mcp_tool_knowledge_search(query: str, category: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """MCP Tool: Knowledge Search"""
     return raw_knowledge_search(query=query, category=category, limit=limit)
 
@@ -158,7 +194,6 @@ def get_mcp_server() -> FastMCP:
 
 def list_registered_mcp_tools() -> List[Dict[str, Any]]:
     """Introspect and list all tools exposed by the MCP server with JSON schemas."""
-    # FastMCP exposes tool definitions via internal tool registry
     tools_list = []
     for name, tool_obj in mcp_server._tool_manager._tools.items():
         tools_list.append({

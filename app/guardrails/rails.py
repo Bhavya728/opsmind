@@ -1,28 +1,18 @@
 """
-NeMo Guardrails & Multi-Layered Safety System for OpsMind Research & Knowledge System.
+Runtime guardrails for OpsMind.
 
-Implements 3 Guardrail Gates:
-1. INPUT RAILS:
-   - Prompt Injection & Jailbreak Detection
-   - Destructive / Malicious Instruction Detection
-   - Out-of-Scope / General Chit-Chat Filtering
-2. TOOL RAILS:
-   - Tool Whitelisting & Authorization
-   - Shell / SQL / Command Injection Prevention
-   - Path Traversal & Unauthorized Access Blocking
-3. OUTPUT RAILS:
-   - API Key & Secret Redaction (Regex & Pattern scanning)
-   - Evidence-Backed Hallucination & Groundedness Verification
-   - Source Citation Enforcement
+1. Input rail (guard_input): pattern checks for prompt injection, destructive commands and
+   obvious chit-chat. The planner's topic check (RESEARCH_SCOPE) runs afterwards in the graph.
+2. Tool rail (guard_tool_call): strict identifiers; free-text search arguments reject command
+   sequences, path traversal and control characters.
+3. Output rails: guard_output redacts secret-like strings; validate_citations normalizes
+   citation tags and removes citations to sources that were not verified.
 """
 
 import re
 from typing import Tuple, Optional, Dict, Any, List
 from app.utils.logger import logfire
 from app.config import settings
-from app.guardrails.colang_rules import COLANG_CONTENT, YAML_CONTENT, RAIL_INDICATORS
-
-_rails = None
 
 # High-precision heuristic filters for deterministic instant safety enforcement
 INJECTION_PATTERNS = [
@@ -56,37 +46,16 @@ OFF_TOPIC_PATTERNS = [
 ]
 
 SECRET_PATTERNS = [
-    r"(?:sk-[a-zA-Z0-9]{20,})",
+    r"\bsk-[A-Za-z0-9_\-]{20,}",                # OpenAI (incl. sk-proj-...) and Anthropic (sk-ant-...)
+    r"\bgsk_[A-Za-z0-9]{20,}",                  # Groq
+    r"\btvly-[A-Za-z0-9_\-]{20,}",              # Tavily (incl. tvly-dev-...)
+    r"\blsv2_[a-z]{2}_[A-Za-z0-9_]{20,}",       # LangSmith
+    r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",           # AWS access key id
     r"(?:ghp_[a-zA-Z0-9]{36})",
     r"(?:Bearer\s+[a-zA-Z0-9_\-\.]{30,})",
     r"(?:password\s*[:=]\s*['\"][^'\"]{6,}['\"])",
     r"(?:API_KEY\s*[:=]\s*['\"][a-zA-Z0-9_\-]{16,}['\"])"
 ]
-
-
-def initialize_rails() -> None:
-    """Initialize NeMo Guardrails if package and LLM available."""
-    global _rails
-    try:
-        from nemoguardrails import RailsConfig, LLMRails
-        from langchain_groq import ChatGroq
-
-        if settings.GROQ_API_KEY:
-            guard_llm = ChatGroq(
-                api_key=settings.GROQ_API_KEY,
-                model="llama-3.1-8b-instant",
-                temperature=0
-            )
-            config = RailsConfig.from_content(
-                colang_content=COLANG_CONTENT,
-                yaml_content=YAML_CONTENT
-            )
-            _rails = LLMRails(config, llm=guard_llm)
-            logfire.info("🛡️ NeMo Guardrails initialized with LLM (llama-3.1-8b-instant)")
-        else:
-            logfire.info("🛡️ NeMo Guardrails using deterministic rule engine.")
-    except Exception as e:
-        logfire.warning(f"⚠️ NeMo LLMRails init note: {e}. Active heuristic rails operational.")
 
 
 def guard_input(message: str) -> Tuple[bool, Optional[str]]:
@@ -96,6 +65,9 @@ def guard_input(message: str) -> Tuple[bool, Optional[str]]:
     """
     clean_msg = message.strip()
     msg_lower = clean_msg.lower()
+
+    if not settings.GUARDRAILS_ENABLED:
+        return False, None
 
     # 1. Fast Heuristic Guard: Prompt Injections
     for pat in INJECTION_PATTERNS:
@@ -115,46 +87,94 @@ def guard_input(message: str) -> Tuple[bool, Optional[str]]:
             logfire.info(f"🛡️ [INPUT RAIL] Off-topic request blocked: '{clean_msg[:50]}'")
             return True, "🛡️ I am OpsMind — an Agentic AI Research & Knowledge System specializing in computer science, machine learning, RAG architectures, LLM systems, and technical knowledge synthesis. I cannot assist with non-technical or general chit-chat requests."
 
-    # 4. NeMo LLM Rails (if initialized)
-    if _rails is not None:
-        try:
-            with logfire.span("🛡️ NeMo Guardrails LLM Gate"):
-                result = _rails.generate(messages=[{"role": "user", "content": clean_msg}])
-                content = result.get("content", "") if isinstance(result, dict) else str(result)
-                if any(ind in content for ind in RAIL_INDICATORS):
-                    logfire.info(f"🛡️ NeMo Rail Fired: '{content[:60]}'")
-                    return True, content
-        except Exception as e:
-            logfire.warning(f"⚠️ NeMo LLM evaluation skipped: {e}")
-
     logfire.info("✅ Input guardrails passed.")
     return False, None
 
 
-def guard(message: str) -> Tuple[bool, Optional[str]]:
-    """Backward-compatible alias for existing imports."""
-    return guard_input(message)
+IDENTIFIER_ARGS = {"doc_id", "category"}
+IDENTIFIER_PATTERN = re.compile(r"[A-Za-z0-9_\-.]{1,128}")
+# Non-printing control bytes; tab, newline and carriage return are ordinary whitespace and allowed.
+CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Shell chaining / substitution plus the destructive commands from the input rail.
+COMMAND_PATTERNS = [r"&&", r"\|\|", r"`", r"\$\("] + MALICIOUS_PATTERNS
 
 
 def guard_tool_call(tool_name: str, args: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """
     Gate 2: Tool Call Guardrails.
-    Validates tool arguments to prevent command injection, SQL injection, and path traversal.
+    Identifier arguments (doc_id, category) must be plain ids. Free-text search arguments may use
+    normal punctuation (; | < > etc.), but command sequences, path traversal and control
+    characters are rejected.
     """
-    dangerous_shell_chars = [";", "&&", "||", "`", "$", "|", ">", "<", "\n", "\r"]
-    
-    # Check string arguments for shell injection or path traversal
     for k, v in args.items():
-        if isinstance(v, str):
-            if any(ch in v for ch in dangerous_shell_chars):
-                logfire.warning(f"🛡️ [TOOL RAIL] Dangerous control character detected in arg '{k}': {v}")
-                return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited control characters."
-            if ".." in v or "/etc/" in v or "\\windows\\" in v.lower():
-                logfire.warning(f"🛡️ [TOOL RAIL] Path traversal detected in arg '{k}': {v}")
-                return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited file traversal sequence."
+        if not isinstance(v, str):
+            continue
+        if re.search(r"\.\./|\.\.\\|/etc/|\\windows\\", v, re.IGNORECASE):
+            logfire.warning(f"🛡️ [TOOL RAIL] Path traversal detected in arg '{k}': {v[:80]}")
+            return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited file traversal sequence."
+        if k in IDENTIFIER_ARGS:
+            if not IDENTIFIER_PATTERN.fullmatch(v):
+                logfire.warning(f"🛡️ [TOOL RAIL] Invalid identifier in arg '{k}': {v[:80]}")
+                return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains prohibited characters for an identifier."
+            continue
+        if CONTROL_CHARS.search(v):
+            logfire.warning(f"🛡️ [TOOL RAIL] Control character detected in arg '{k}': {v[:80]!r}")
+            return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains a non-printing control character."
+        if any(re.search(p, v, re.IGNORECASE) for p in COMMAND_PATTERNS):
+            logfire.warning(f"🛡️ [TOOL RAIL] Command sequence detected in arg '{k}': {v[:80]}")
+            return False, f"🛡️ [TOOL SECURITY VIOLATION] Argument '{k}' contains a prohibited command sequence."
 
     logfire.info(f"✅ Tool call '{tool_name}' verified by guardrails.")
     return True, None
+
+
+CITATION_PATTERN = re.compile(r"\[Sources?:\s*([^\]]+?)\s*\]")
+# Bracketed groups in other styles models use for citations: [id], 【id】, (Source: id).
+ALT_CITATION_PATTERN = re.compile(r"(?<!\])[\[【(]([^\[\]【】()]{1,200})[\]】)]")
+# LLMs often emit typographic hyphens (U+2010-U+2015, U+2212) inside ids.
+_HYPHENS = str.maketrans({c: "-" for c in "‐‑‒–—―−"})
+
+
+def validate_citations(text: str, allowed_ids: List[str]) -> Tuple[str, List[str], List[str]]:
+    """
+    Gate 3b: Citation grounding check.
+    Normalizes [Source: X] and [Source: X, Y] tags to one tag per verified id and removes
+    ids that are not among the verified sources.
+    Returns (cleaned_text, cited_valid_ids, invalid_ids).
+    """
+    allowed = set(allowed_ids)
+    used: List[str] = []
+    invalid: List[str] = []
+
+    def _canonicalize(match: "re.Match") -> str:
+        # Rewrite [web-1], 【web‑1】, (Source: web-1, doc-x) ... to [Source: id] when every id is verified.
+        body = re.sub(r"^\s*Sources?:\s*", "", match.group(1))
+        ids = [part.strip().translate(_HYPHENS) for part in re.split(r"[,;]", body) if part.strip()]
+        if ids and all(i in allowed for i in ids):
+            return " ".join(f"[Source: {i}]" for i in ids)
+        return match.group(0)
+
+    if allowed:
+        text = ALT_CITATION_PATTERN.sub(_canonicalize, text)
+
+    def _check(match: "re.Match") -> str:
+        kept = []
+        for raw in re.split(r"[,;]", match.group(1)):
+            cid = raw.strip().translate(_HYPHENS)
+            if not cid:
+                continue
+            if cid in allowed:
+                kept.append(cid)
+                if cid not in used:
+                    used.append(cid)
+            elif cid not in invalid:
+                invalid.append(cid)
+        return " ".join(f"[Source: {cid}]" for cid in kept)
+
+    cleaned = CITATION_PATTERN.sub(_check, text)
+    if invalid:
+        logfire.warning(f"🛡️ [OUTPUT RAIL] Removed citations to unverified sources: {invalid}")
+    return cleaned, used, invalid
 
 
 def guard_output(text: str, evidence: Optional[List[str]] = None) -> str:
@@ -162,6 +182,8 @@ def guard_output(text: str, evidence: Optional[List[str]] = None) -> str:
     Gate 3: Output Guardrails.
     Scans for leaked credentials/tokens and redacts them before returning to user.
     """
+    if not settings.GUARDRAILS_ENABLED:
+        return text
     redacted_text = text
     for pat in SECRET_PATTERNS:
         redacted_text = re.sub(pat, "[REDACTED_SECRET]", redacted_text)

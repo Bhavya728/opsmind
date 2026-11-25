@@ -1,19 +1,26 @@
 """
 OpsMind Automated Evaluation Pipeline.
-Executes the golden dataset across:
-A. Actual RAGAS Framework Metrics (Faithfulness, Answer Relevancy, Context Precision, Context Recall)
-B. Custom Heuristic Metrics (Faithfulness, Answer Relevance, Context Relevance, Context Recall)
-C. Agent Tool Selection Accuracy
-D. Guardrail Decision Accuracy
-E. Citation Compliance
 
-Saves comprehensive results to evals/evaluation_results.json.
+Runs the golden dataset through the full system and scores each case on two layers:
+A. Deterministic checks from the system's own output (evals/metrics.py):
+   guardrail decision, routing recall, critic source recall/precision, citation use.
+B. Independent LLM judge (evals/judge.py, JUDGE_MODEL): correctness against the expected
+   answer characteristics, faithfulness to sources, and relevance. Requires USE_LIVE_LLM=true.
+
+Failed runs (e.g. rate limits) are recorded as errors and excluded from the averages.
+
+Usage:
+    python evals/evaluator.py                 # all cases
+    python evals/evaluator.py --limit 5       # first 5 cases
+    python evals/evaluator.py --ids 1,4,26    # specific cases
+    python evals/evaluator.py --no-judge      # deterministic checks only
 """
 
 import os
 import sys
 import json
 import time
+import argparse
 from typing import Dict, Any, List, Optional
 
 # Ensure project root is first in sys.path
@@ -23,332 +30,220 @@ if PROJECT_ROOT not in sys.path:
 
 from app.config import settings
 from app.agents.graph import investigate_query
-from app.services.retrieval.chroma_service import chroma_service
-from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS, WEB_KNOWLEDGE_INDEX
-from evals.metrics import (
-    custom_faithfulness_heuristic,
-    custom_answer_relevance_heuristic,
-    custom_context_relevance_heuristic,
-    custom_context_recall_heuristic,
-    custom_tool_selection_accuracy,
-    custom_guardrail_accuracy,
-    custom_citation_compliance
-)
+from app.gateway.client import get_llm_runtime_status
+from evals.metrics import guardrail_correct, routing_recall, source_recall, source_precision, cites_sources, mean
+from evals.judge import judge_answer, judge_available
 from app.utils.logger import logfire
 
 DATASET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden_dataset.json")
 RESULTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results.json")
 
+# Thresholds a research case must meet to pass (judge metrics only apply when the judge ran).
+PASS_CORRECTNESS = 0.6
+PASS_FAITHFULNESS = 0.7
 
-def _resolve_context_texts(sources: List[Dict[str, Any]]) -> List[str]:
-    """Resolve full text content for retrieved sources."""
-    context_chunks = []
-    for s in sources:
-        doc_id = s.get("id", "")
-        title = s.get("title", "")
-        # Try finding in knowledge base
-        matched_doc = None
-        for doc in KNOWLEDGE_DOCUMENTS:
-            if doc["id"] == doc_id or doc["id"] in doc_id:
-                matched_doc = doc
-                break
-        if matched_doc:
-            context_chunks.append(f"{matched_doc['title']}\n{matched_doc['content']}")
-            continue
-            
-        # Try finding in web index
-        matched_web = None
-        for web in WEB_KNOWLEDGE_INDEX:
-            if web["url"] == doc_id or web["title"] == title:
-                matched_web = web
-                break
-        if matched_web:
-            context_chunks.append(f"{matched_web['title']}\n{matched_web['snippet']}")
-            continue
-
-        context_chunks.append(f"{title} {doc_id}")
-    return context_chunks
+SUMMARY_METRICS = [
+    "correctness", "faithfulness", "relevance", "routing_recall",
+    "source_recall", "source_precision", "cites_sources", "guardrail_accuracy",
+]
+# Metrics averaged into the overall score (system confidence is reported, not scored).
+SCORED_METRICS = ["correctness", "faithfulness", "relevance", "routing_recall", "source_recall",
+                  "cites_sources", "guardrail_accuracy"]
 
 
-def run_ragas_evaluation_if_available(eval_samples: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Executes real RAGAS evaluation using the official ragas package if live LLM is configured.
-    Does NOT fabricate scores when live LLM credentials are unavailable.
-    """
-    use_live_llm = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
-    has_keys = bool(settings.GROQ_API_KEY or settings.PORTKEY_API_KEY)
-    
-    if not use_live_llm or not has_keys:
-        return {
-            "status": "unavailable_offline",
-            "message": "Actual RAGAS LLM-assisted evaluation requires USE_LIVE_LLM=true and a valid GROQ_API_KEY / PORTKEY_API_KEY. Custom deterministic heuristics executed successfully.",
-            "metrics": {
-                "faithfulness": None,
-                "answer_relevancy": None,
-                "context_precision": None,
-                "context_recall": None
-            }
-        }
-
-    try:
-        from ragas import evaluate
-        from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
-        from datasets import Dataset
-
-        data_dict = {
-            "user_input": [s["question"] for s in eval_samples],
-            "response": [s["answer"] for s in eval_samples],
-            "retrieved_contexts": [s["contexts"] for s in eval_samples],
-            "reference": [s["reference"] for s in eval_samples]
-        }
-        dataset = Dataset.from_dict(data_dict)
-        
-        logfire.info("📊 Running official RAGAS evaluation on dataset...")
-        results = evaluate(
-            dataset=dataset,
-            metrics=[faithfulness, answer_relevancy, context_precision, context_recall]
-        )
-        return {
-            "status": "completed",
-            "metrics": {
-                "faithfulness": round(float(results.get("faithfulness", 0.0)), 3),
-                "answer_relevancy": round(float(results.get("answer_relevancy", 0.0)), 3),
-                "context_precision": round(float(results.get("context_precision", 0.0)), 3),
-                "context_recall": round(float(results.get("context_recall", 0.0)), 3)
-            }
-        }
-    except Exception as e:
-        logfire.warning(f"⚠️ RAGAS evaluation run note: {e}")
-        return {
-            "status": "error",
-            "message": str(e),
-            "metrics": {
-                "faithfulness": None,
-                "answer_relevancy": None,
-                "context_precision": None,
-                "context_recall": None
-            }
-        }
-
-
-def evaluate_single_query(question: str, expected_evidence: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Evaluates a single research query and returns calculated custom heuristic metrics."""
-    start_time = time.time()
-    output = investigate_query(question)
-    latency = round(time.time() - start_time, 3)
-    
-    answer = output.get("answer", "")
-    sources = output.get("sources", [])
-    context_texts = _resolve_context_texts(sources)
-    
-    faith_score = custom_faithfulness_heuristic(answer, context_texts)
-    ans_rel_score = custom_answer_relevance_heuristic(question, answer)
-    ctx_rel_score = custom_context_relevance_heuristic(question, context_texts)
-    cite_score = custom_citation_compliance(answer)
-    
+def _config_snapshot(judge_enabled: bool) -> Dict[str, Any]:
     return {
+        "mode": settings.MODE,
+        "llm_backend": get_llm_runtime_status(),
+        "fast_model": settings.GROQ_FAST_MODEL,
+        "report_model": settings.GROQ_MODEL,
+        "verifier_model": settings.VERIFIER_MODEL,
+        "judge_model": settings.JUDGE_MODEL if judge_enabled else None,
+        "web_search": settings.ACTIVE_WEB_PROVIDER,
+        "embeddings": "deterministic" if settings.USE_DETERMINISTIC_MODE else settings.EMBEDDING_MODEL,
+        "min_relevance_score": settings.MIN_RELEVANCE_SCORE,
+        "max_research_rounds": settings.MAX_RESEARCH_ROUNDS,
+        "claim_verification": settings.CLAIM_VERIFICATION_ENABLED,
+    }
+
+
+def evaluate_case(sample: Dict[str, Any], use_judge: bool) -> Dict[str, Any]:
+    """Run one dataset case through the system and score it."""
+    question = sample.get("question", "")
+    expected_blocked = bool(sample.get("expected_blocked", False))
+    case: Dict[str, Any] = {
+        "id": sample.get("id"),
         "question": question,
-        "answer": answer,
-        "sources": sources,
-        "latency_seconds": latency,
-        "custom_heuristics": {
-            "faithfulness": faith_score,
-            "answer_relevance": ans_rel_score,
-            "context_relevance": ctx_rel_score,
-            "citation_compliance": cite_score
-        },
-        "confidence": output.get("confidence", 0.0)
+        "test_type": sample.get("test_type", "research"),
+        "category": sample.get("category", "general"),
     }
 
+    start = time.time()
+    try:
+        result = investigate_query(question)
+    except Exception as e:
+        case.update({"status": "error", "error": f"{type(e).__name__}: {e}"[:300],
+                     "latency_seconds": round(time.time() - start, 2), "passed": False})
+        logfire.warning(f"⚠️ Eval case #{case['id']} failed: {case['error']}")
+        return case
 
-def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS_PATH) -> Dict[str, Any]:
-    """Execute complete evaluation suite against golden dataset."""
+    blocked = bool(result.get("guardrail_blocked"))
+    metrics: Dict[str, Optional[float]] = {"guardrail_accuracy": guardrail_correct(expected_blocked, blocked)}
+    judge: Dict[str, Any] = {}
+
+    if not expected_blocked and not blocked:
+        sources = result.get("sources", [])
+        expected_sources = sample.get("expected_relevant_sources", [])
+        metrics.update({
+            "routing_recall": routing_recall(sample.get("expected_tools", []), result.get("routing")),
+            "source_recall": source_recall(expected_sources, sources),
+            "source_precision": source_precision(expected_sources, sources),
+            "cites_sources": cites_sources(result),
+        })
+        if use_judge:
+            try:
+                judge = judge_answer(question, sample.get("expected_answer_characteristics", []),
+                                     result.get("answer", ""), sources)
+            except Exception as e:
+                judge = {"status": "error", "error": f"{type(e).__name__}: {e}"[:300]}
+            if judge.get("status") == "ok":
+                metrics.update({k: judge.get(k) for k in ("correctness", "faithfulness", "relevance")})
+
+    if expected_blocked or blocked:
+        passed = metrics["guardrail_accuracy"] == 1.0
+    else:
+        checks = [
+            metrics.get("routing_recall") in (None, 1.0),
+            metrics.get("cites_sources") in (None, 1.0),
+            metrics.get("correctness") is None or metrics["correctness"] >= PASS_CORRECTNESS,
+            metrics.get("faithfulness") is None or metrics["faithfulness"] >= PASS_FAITHFULNESS,
+        ]
+        passed = all(checks)
+
+    answer = result.get("answer", "")
+    case.update({
+        "status": "ok",
+        "passed": passed,
+        "expected_blocked": expected_blocked,
+        "actual_blocked": blocked,
+        "metrics": metrics,
+        "judge": judge,
+        "system": {
+            "confidence": result.get("confidence"),
+            "evidence_quality": result.get("evidence_quality"),
+            "claim_support": result.get("claim_support"),
+            "routing": result.get("routing"),
+            "research_rounds": result.get("research_rounds"),
+            "revisions": result.get("revisions"),
+            "tokens": (result.get("token_usage") or {}).get("total"),
+            "warnings": result.get("warnings", []),
+        },
+        "latency_seconds": round(time.time() - start, 2),
+        "sources": [{"id": s.get("id"), "type": s.get("type"), "score": s.get("score")} for s in result.get("sources", [])],
+        "citations": result.get("citations", []),
+        "actual_answer_snippet": answer[:300] + ("..." if len(answer) > 300 else ""),
+    })
+    return case
+
+
+def evaluate_single_query(question: str, expected_characteristics: Optional[List[str]] = None,
+                          use_judge: Optional[bool] = None) -> Dict[str, Any]:
+    """Evaluate one ad-hoc research question."""
+    use_judge = (judge_available() is None) if use_judge is None else use_judge
+    return evaluate_case({"id": "adhoc", "question": question,
+                          "expected_answer_characteristics": expected_characteristics or []}, use_judge)
+
+
+def run_evaluations(dataset_path: str = DATASET_PATH, output_path: str = RESULTS_PATH,
+                    limit: Optional[int] = None, ids: Optional[List[int]] = None,
+                    use_judge: bool = True) -> Dict[str, Any]:
+    """Execute the evaluation suite against the golden dataset and save the report."""
     with open(dataset_path, "r", encoding="utf-8") as f:
-        dataset = json.load(f)
+        samples = json.load(f).get("samples", [])
+    if ids:
+        samples = [s for s in samples if s.get("id") in set(ids)]
+    if limit:
+        samples = samples[:limit]
 
-    samples = dataset.get("samples", [])
-    total_samples = len(samples)
-    logfire.info(f"🚀 Starting OpsMind Evaluation Run on {total_samples} test cases...")
+    judge_reason = judge_available() if use_judge else "disabled with --no-judge"
+    use_judge = judge_reason is None
+    if not use_judge:
+        logfire.warning(f"⚠️ Judge metrics skipped: {judge_reason}")
+    logfire.info(f"🚀 Starting OpsMind evaluation on {len(samples)} cases (judge: {settings.JUDGE_MODEL if use_judge else 'off'})")
 
-    results = []
-    rag_faithfulness_scores = []
-    rag_answer_rel_scores = []
-    rag_context_rel_scores = []
-    rag_context_recall_scores = []
-    tool_accuracy_scores = []
-    guardrail_accuracy_scores = []
-    citation_scores = []
-    latencies = []
-    total_tokens_estimated = 0
+    run_start = time.time()
+    cases = []
+    for idx, sample in enumerate(samples, start=1):
+        logfire.info(f"[{idx}/{len(samples)}] Eval case #{sample.get('id')}: '{sample.get('question', '')[:60]}'")
+        cases.append(evaluate_case(sample, use_judge))
 
-    ragas_samples_payload = []
+    completed = [c for c in cases if c["status"] == "ok"]
+    summary = {m: mean([c["metrics"].get(m) for c in completed]) for m in SUMMARY_METRICS}
+    summary.update({
+        "average_latency_sec": mean([c["latency_seconds"] for c in completed]),
+        "average_system_confidence": mean([c["system"]["confidence"] for c in completed if not c["actual_blocked"]]),
+        "total_tokens": sum(c["system"]["tokens"] or 0 for c in completed),
+    })
+    scored = [summary[m] for m in SCORED_METRICS if summary.get(m) is not None]
 
-    for idx, sample in enumerate(samples):
-        q_id = sample.get("id", idx + 1)
-        question = sample.get("question", "")
-        test_type = sample.get("test_type", "research")
-        expected_blocked = sample.get("expected_blocked", False)
-        expected_evidence = sample.get("expected_supporting_evidence", [])
-        expected_tools = sample.get("expected_tools", [])
-
-        logfire.info(f"[{idx+1}/{total_samples}] Running eval case #{q_id}: '{question[:50]}'")
-        start_time = time.time()
-        
-        # Execute System
-        try:
-            output = investigate_query(question)
-            latency = round(time.time() - start_time, 3)
-        except Exception as e:
-            latency = round(time.time() - start_time, 3)
-            output = {
-                "answer": f"Evaluation Execution Error: {e}",
-                "sources": [],
-                "agents_used": [],
-                "tools_used": [],
-                "confidence": 0.0,
-                "guardrail_blocked": False
-            }
-
-        latencies.append(latency)
-        actual_answer = output.get("answer", "")
-        actual_sources = output.get("sources", [])
-        actual_tools = output.get("tools_used", [])
-        actual_blocked = output.get("guardrail_blocked", False)
-
-        tokens = int(len(question.split()) * 1.3 + len(actual_answer.split()) * 1.3 + 450)
-        total_tokens_estimated += tokens
-
-        guard_score = custom_guardrail_accuracy(expected_blocked, actual_blocked)
-        guardrail_accuracy_scores.append(guard_score)
-
-        tool_score = custom_tool_selection_accuracy(expected_tools, actual_tools)
-        tool_accuracy_scores.append(tool_score)
-
-        if not expected_blocked and not actual_blocked:
-            context_texts = _resolve_context_texts(actual_sources)
-            
-            faith_score = custom_faithfulness_heuristic(actual_answer, context_texts)
-            ans_rel_score = custom_answer_relevance_heuristic(question, actual_answer)
-            ctx_rel_score = custom_context_relevance_heuristic(question, context_texts)
-            ctx_rec_score = custom_context_recall_heuristic(expected_evidence, context_texts)
-            cite_score = custom_citation_compliance(actual_answer)
-
-            rag_faithfulness_scores.append(faith_score)
-            rag_answer_rel_scores.append(ans_rel_score)
-            rag_context_rel_scores.append(ctx_rel_score)
-            rag_context_recall_scores.append(ctx_rec_score)
-            citation_scores.append(cite_score)
-            
-            case_passed = (faith_score >= 0.70 and ans_rel_score >= 0.70 and guard_score == 1.0)
-            
-            ragas_samples_payload.append({
-                "question": question,
-                "answer": actual_answer,
-                "contexts": context_texts if context_texts else ["Context unavailable."],
-                "reference": " ".join(expected_evidence) if expected_evidence else "Technical ground truth."
-            })
-        else:
-            faith_score = 1.0
-            ans_rel_score = 1.0
-            ctx_rel_score = 1.0
-            ctx_rec_score = 1.0
-            cite_score = 1.0
-            case_passed = (guard_score == 1.0)
-
-        case_result = {
-            "id": q_id,
-            "question": question,
-            "test_type": test_type,
-            "category": sample.get("category", "general"),
-            "passed": case_passed,
-            "latency_seconds": latency,
-            "estimated_tokens": tokens,
-            "guardrail_score": guard_score,
-            "tool_selection_score": tool_score,
-            "custom_heuristics": {
-                "faithfulness": faith_score,
-                "answer_relevance": ans_rel_score,
-                "context_relevance": ctx_rel_score,
-                "context_recall": ctx_rec_score,
-                "citation_compliance": cite_score
-            },
-            "actual_answer_snippet": actual_answer[:220] + "..." if len(actual_answer) > 220 else actual_answer,
-            "actual_sources": actual_sources,
-            "agents_used": output.get("agents_used", []),
-            "tools_used": actual_tools
-        }
-        results.append(case_result)
-
-    avg_faithfulness = round(sum(rag_faithfulness_scores) / max(1, len(rag_faithfulness_scores)), 3)
-    avg_answer_relevance = round(sum(rag_answer_rel_scores) / max(1, len(rag_answer_rel_scores)), 3)
-    avg_context_relevance = round(sum(rag_context_rel_scores) / max(1, len(rag_context_rel_scores)), 3)
-    avg_context_recall = round(sum(rag_context_recall_scores) / max(1, len(rag_context_recall_scores)), 3)
-    avg_tool_accuracy = round(sum(tool_accuracy_scores) / max(1, len(tool_accuracy_scores)), 3)
-    avg_guardrail_accuracy = round(sum(guardrail_accuracy_scores) / max(1, len(guardrail_accuracy_scores)), 3)
-    avg_citation_score = round(sum(citation_scores) / max(1, len(citation_scores)), 3)
-    avg_latency = round(sum(latencies) / max(1, len(latencies)), 3)
-    
-    passed_cases = sum(1 for r in results if r["passed"])
-    overall_score = round(
-        (avg_faithfulness * 0.25) +
-        (avg_answer_relevance * 0.20) +
-        (avg_context_relevance * 0.15) +
-        (avg_tool_accuracy * 0.15) +
-        (avg_guardrail_accuracy * 0.15) +
-        (avg_citation_score * 0.10),
-        3
-    )
-
-    # Execute official RAGAS if enabled
-    ragas_report = run_ragas_evaluation_if_available(ragas_samples_payload)
-
-    evaluation_report = {
+    report = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "total_cases": total_samples,
-        "passed_cases": passed_cases,
-        "failed_cases": total_samples - passed_cases,
-        "overall_score": overall_score,
-        "ragas_evaluation": ragas_report,
-        "custom_heuristics_summary": {
-            "faithfulness_heuristic": avg_faithfulness,
-            "answer_relevance_heuristic": avg_answer_relevance,
-            "context_relevance_heuristic": avg_context_relevance,
-            "context_recall_heuristic": avg_context_recall,
-            "tool_selection_accuracy": avg_tool_accuracy,
-            "guardrail_accuracy": avg_guardrail_accuracy,
-            "citation_compliance": avg_citation_score,
-            "average_latency_sec": avg_latency,
-            "total_tokens_consumed": total_tokens_estimated
-        },
-        "case_results": results
+        "config": _config_snapshot(use_judge),
+        "judge_status": "ok" if use_judge else judge_reason,
+        "total_cases": len(cases),
+        "completed_cases": len(completed),
+        "error_cases": len(cases) - len(completed),
+        "passed_cases": sum(1 for c in cases if c["passed"]),
+        "overall_score": round(sum(scored) / len(scored), 3) if scored else None,
+        "summary": summary,
+        "run_seconds": round(time.time() - run_start, 1),
+        "case_results": cases,
     }
-
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(evaluation_report, f, indent=2)
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    logfire.info(f"📊 Evaluation complete: {report['passed_cases']}/{len(cases)} passed, overall {report['overall_score']}")
+    return report
 
-    logfire.info(f"📊 Evaluation Complete! Overall Score: {overall_score * 100}% | Passed: {passed_cases}/{total_samples}")
-    return evaluation_report
+
+def _pct(value: Optional[float]) -> str:
+    return "n/a" if value is None else f"{value * 100:.1f}%"
 
 
-# Backward compatibility aliases
-run_full_evaluation = run_evaluations
-evaluate_single_sample = evaluate_single_query
+def main(argv: Optional[List[str]] = None) -> None:
+    parser = argparse.ArgumentParser(description="Run the OpsMind evaluation suite.")
+    parser.add_argument("--limit", type=int, help="Only run the first N cases.")
+    parser.add_argument("--ids", help="Comma-separated case ids to run, e.g. 1,4,26.")
+    parser.add_argument("--no-judge", action="store_true", help="Skip the LLM judge (deterministic checks only).")
+    parser.add_argument("--output", default=RESULTS_PATH, help="Where to write the JSON report.")
+    args = parser.parse_args(argv)
+
+    report = run_evaluations(
+        output_path=args.output, limit=args.limit, use_judge=not args.no_judge,
+        ids=[int(i) for i in args.ids.split(",")] if args.ids else None,
+    )
+    s = report["summary"]
+    print("\n" + "=" * 56)
+    print("              OPSMIND EVALUATION SUMMARY")
+    print("=" * 56)
+    print(f"Cases:                 {report['passed_cases']} passed / {report['completed_cases']} completed / {report['error_cases']} errors")
+    print(f"Overall score:         {_pct(report['overall_score'])}")
+    print(f"Judge ({report['config']['judge_model'] or 'off'}): {report['judge_status']}")
+    print(f"  Correctness:         {_pct(s['correctness'])}")
+    print(f"  Faithfulness:        {_pct(s['faithfulness'])}")
+    print(f"  Relevance:           {_pct(s['relevance'])}")
+    print(f"Routing recall:        {_pct(s['routing_recall'])}")
+    print(f"Critic source recall:  {_pct(s['source_recall'])}   precision: {_pct(s['source_precision'])}")
+    print(f"Cites sources:         {_pct(s['cites_sources'])}")
+    print(f"Guardrail accuracy:    {_pct(s['guardrail_accuracy'])}")
+    print(f"System confidence avg: {_pct(s['average_system_confidence'])}")
+    print(f"Avg latency:           {s['average_latency_sec']}s   tokens: {s['total_tokens']}   run: {report['run_seconds']}s")
+    print("=" * 56)
+    for c in report["case_results"]:
+        if c["status"] != "ok":
+            print(f"  ERROR #{c['id']}: {c['error'][:120]}")
+        elif not c["passed"]:
+            print(f"  FAIL  #{c['id']}: {c['question'][:60]} | {c['metrics']}")
 
 
 if __name__ == "__main__":
-    report = run_evaluations()
-    print("\n" + "="*50)
-    print("       OPSMIND EVALUATION SUMMARY")
-    print("="*50)
-    print(f"Overall Score:            {report['overall_score']*100:.1f}%")
-    print(f"Passed Test Cases:        {report['passed_cases']}/{report['total_cases']}")
-    print(f"Faithfulness (Heuristic): {report['custom_heuristics_summary']['faithfulness_heuristic']*100:.1f}%")
-    print(f"Answer Relevance (Heur):  {report['custom_heuristics_summary']['answer_relevance_heuristic']*100:.1f}%")
-    print(f"Context Relevance (Heur): {report['custom_heuristics_summary']['context_relevance_heuristic']*100:.1f}%")
-    print(f"Context Recall (Heur):    {report['custom_heuristics_summary']['context_recall_heuristic']*100:.1f}%")
-    print(f"Tool Selection Accuracy:  {report['custom_heuristics_summary']['tool_selection_accuracy']*100:.1f}%")
-    print(f"Guardrail Accuracy:       {report['custom_heuristics_summary']['guardrail_accuracy']*100:.1f}%")
-    print(f"Citation Compliance:      {report['custom_heuristics_summary']['citation_compliance']*100:.1f}%")
-    print(f"Average Latency:          {report['custom_heuristics_summary']['average_latency_sec']}s")
-    print(f"RAGAS Status:             {report['ragas_evaluation']['status']}")
-    print("="*50)
+    main()

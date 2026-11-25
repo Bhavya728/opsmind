@@ -10,7 +10,7 @@ from app.services.retrieval.chroma_service import (
     HuggingFaceSentenceTransformerEmbeddingFunction,
     get_embedding_function
 )
-from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS
+from app.config import settings
 
 
 def test_deterministic_embedding_generation():
@@ -52,7 +52,7 @@ def test_chroma_knowledge_retrieval_query():
     top_result = results[0]
     assert "content" in top_result
     assert "score" in top_result
-    assert top_result["score"] >= 0.50
+    assert top_result["score"] >= settings.MIN_RELEVANCE_SCORE
 
 
 def test_chroma_knowledge_retrieval_with_category_filter():
@@ -84,3 +84,14 @@ def test_chroma_status_reporting():
     assert "embedding_backend" in status
     assert status["embedding_backend"] in ("deterministic", "sentence-transformers/all-MiniLM-L6-v2")
     assert status["document_count"] >= 8
+
+
+def test_chroma_irrelevant_query_returns_nothing():
+    """Off-topic queries return no chunks instead of padding with unrelated documents."""
+    assert chroma_service.query("Roman Empire timeline from 27 BCE to 476 CE") == []
+
+
+def test_chunking_splits_documents():
+    """Documents are split into multiple chunks according to CHUNK_SIZE."""
+    status = chroma_service.get_status()
+    assert status["chunk_count"] > status["document_count"]

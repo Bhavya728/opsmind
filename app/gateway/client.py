@@ -1,21 +1,17 @@
 """
 LLM Gateway Module with Portkey Integration and Multi-Tier Task-Based Routing.
 
-Architecture:
-- Portkey Gateway with fallback strategy (@research/llama-3.3-70b-versatile -> @fast/llama-3.1-8b-instant)
-- Task-based model tier selection:
-  * "planning" / "classification" / "critic" -> Fast / Cheaper Model (llama-3.1-8b-instant)
-  * "synthesis" / "report" / "general" -> Strong Model (llama-3.3-70b-versatile)
-- Resilient fallback chain: Portkey Gateway -> Direct Groq -> Deterministic Reasoning Engine
+- Task tiers: planning / critic / verification -> GROQ_FAST_MODEL (verification: VERIFIER_MODEL);
+  synthesis -> GROQ_MODEL
+- Backends: Portkey Gateway (if PORTKEY_API_KEY) -> direct Groq; offline engine when USE_LIVE_LLM=false
+- get_judge_llm(): independent evaluation judge (JUDGE_MODEL, optional OpenAI-compatible JUDGE_BASE_URL)
 """
 
-import os
 import re
 import json
-import time
-from typing import Dict, List, Any, Optional
+from typing import List, Any, Optional
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.config import settings
@@ -30,36 +26,18 @@ GATEWAY_CONFIG = {
         "on_status_codes": [429, 503, 500]
     },
     "targets": [
-        {"override_params": {"model": f"@{settings.GROQ_SLUG}/llama-3.3-70b-versatile"}},
-        {"override_params": {"model": f"@{settings.GROQ_SLUG_2}/llama-3.1-8b-instant"}},
+        {"override_params": {"model": f"@{settings.GROQ_SLUG}/{settings.GROQ_MODEL}"}},
+        {"override_params": {"model": f"@{settings.GROQ_SLUG_2}/{settings.GROQ_FAST_MODEL}"}},
     ]
 }
 
-# Optional direct portkey client instance
-try:
-    from portkey_ai import Portkey
-    portkey_client = Portkey(api_key=settings.PORTKEY_API_KEY, config=GATEWAY_CONFIG) if settings.PORTKEY_API_KEY else None
-except Exception:
-    portkey_client = None
-
-
-def extract_cache_status(response) -> str:
-    """Extract Portkey semantic cache header status."""
-    for attr in ("_raw_response", "_response", "_http_response"):
-        raw = getattr(response, attr, None)
-        if raw is not None:
-            status = getattr(raw, "headers", {}).get("x-portkey-cache-status", "")
-            if status:
-                return status.upper()
-    return "MISS"
-
-
 class DeterministicReasoningLLM(BaseChatModel):
     """
-    High-fidelity deterministic offline LLM for unit tests, local evaluations,
-    and offline execution when cloud API keys are missing or rate limited.
+    Deterministic offline LLM for unit tests and local runs without API keys.
+    It derives its output from the prompt it receives (the query and the evidence blocks),
+    so offline results reflect what was actually retrieved.
     """
-    model_name: str = "mock-deterministic-research"
+    model_name: str = "offline-deterministic"
     task_type: str = "general"
 
     def _generate(self, messages: List[Any], stop: Optional[List[str]] = None, **kwargs) -> Any:
@@ -71,96 +49,74 @@ class DeterministicReasoningLLM(BaseChatModel):
                 parts.append(str(m.get("content", "")))
             else:
                 parts.append(str(m))
-        prompt_text = " ".join(parts)
-        response_text = self._synthesize_response(prompt_text)
-        message = AIMessage(content=response_text)
-        return ChatResult(generations=[ChatGeneration(message=message)])
+        response_text = self._synthesize_response("\n".join(parts))
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=response_text))])
+
+    @staticmethod
+    def _quoted_query(prompt: str) -> str:
+        match = re.search(r'(?:Research Query|Query|USER QUERY):?\s*\n?\s*"(.+?)"', prompt)
+        return match.group(1) if match else prompt.strip().splitlines()[0][:200]
 
     def _synthesize_response(self, prompt: str) -> str:
-        prompt_lower = prompt.lower()
-        
-        # 1. Query Planner task
+        query = self._quoted_query(prompt)
+        query_lower = query.lower()
+
         if self.task_type in ("planning", "classification", "routing"):
-            need_rag = True
-            need_web = True
-            if "internal only" in prompt_lower or "private kb" in prompt_lower:
-                need_web = False
-            if "latest web" in prompt_lower or "news" in prompt_lower:
-                need_rag = False
-
-            words = [w for w in re.findall(r"\w+", prompt_lower) if len(w) > 3 and w not in ["what", "explain", "compare", "system", "please", "about", "which", "could", "task", "user", "query"]]
-            query_focus = " ".join(words[:4]) if words else "LLM system architecture"
-            
             return json.dumps({
-                "need_rag": need_rag,
-                "need_web": need_web,
-                "search_queries": [
-                    f"{query_focus} overview and concepts",
-                    f"{query_focus} architectures and evaluation"
-                ],
-                "focus_areas": [
-                    "Core definitions & architectural patterns",
-                    "Evaluation methodologies & metrics",
-                    "Production trade-offs & best practices"
-                ],
+                "in_scope": True,
+                "scope_reason": "Offline mode does not judge scope; only pattern guardrails apply.",
+                "need_rag": "latest" not in query_lower and "news" not in query_lower,
+                "need_web": "internal only" not in query_lower,
+                "search_queries": [query],
+                "focus_areas": [],
                 "plan": [
-                    f"1. Query ChromaDB internal knowledge base for '{query_focus}'",
-                    f"2. Execute web research for latest industry updates on '{query_focus}'",
-                    "3. Perform evidence critique and filter ungrounded claims",
-                    "4. Synthesize comprehensive structured research report with citations"
-                ]
-            })
-
-        # 2. Evidence Critic task
-        if self.task_type in ("critic", "evaluation"):
-            return json.dumps({
-                "is_grounded": True,
-                "confidence": 0.94,
-                "verified_claims": [
-                    "Context documents provide direct architectural definitions and mathematical formulations.",
-                    "Evidence from both RAG retrieval and web search aligns without contradictions.",
-                    "All factual assertions are corroborated by cited source documents."
+                    f"1. Retrieve internal knowledge relevant to '{query}'",
+                    f"2. Search external sources for '{query}'",
+                    "3. Review retrieved evidence for relevance",
+                    "4. Write a cited report from the accepted evidence",
                 ],
-                "identified_gaps": [],
-                "critic_feedback": "Evidence is highly relevant, technically rigorous, and directly answers all aspects of the research question."
             })
 
-        # 3. Report Synthesis task
-        from app.data.knowledge_base import KNOWLEDGE_DOCUMENTS
-        matched_doc = None
-        best_score = 0
-        prompt_tokens = set(re.findall(r"\w+", prompt_lower))
+        if self.task_type in ("critic", "evaluation"):
+            refs = re.findall(r"^\[(S\d+)\]", prompt, re.MULTILINE)
+            return json.dumps({
+                "sources": [{"ref": r, "relevant": True, "reason": "Accepted by offline critic (retrieval threshold already applied)."} for r in refs],
+                "is_grounded": bool(refs),
+                "identified_gaps": [],
+                "critic_notes": f"Offline critic accepted {len(refs)} retrieved sources without semantic review.",
+            })
 
-        for doc in KNOWLEDGE_DOCUMENTS:
-            doc_tokens = set(re.findall(r"\w+", f"{doc['title']} {doc['summary']} {' '.join(doc.get('tags', []))}".lower()))
-            overlap = len(prompt_tokens & doc_tokens)
-            if overlap > best_score:
-                best_score = overlap
-                matched_doc = doc
+        if self.task_type == "verification":
+            ids_line = re.search(r"^Source ids: (.*)$", prompt, re.MULTILINE)
+            allowed = {i.strip() for i in ids_line.group(1).split(",")} if ids_line else set()
+            report = prompt.split("REPORT:", 1)[-1]
+            claims = [
+                {"claim": line.strip()[:200], "source": cid, "verdict": "supported" if cid in allowed else "unsupported"}
+                for line in report.splitlines()
+                for cid in re.findall(r"\[Source: ([^\]]+)\]", line)[:1]
+            ]
+            return json.dumps({"claims": claims})
 
-        topic_title = matched_doc["title"] if matched_doc else "AI & LLM System Engineering Analysis"
-        doc_id = matched_doc["id"] if matched_doc else "doc-rag-eval-01"
-        summary_text = matched_doc.get("summary", "Technical synthesis of modern LLM architectures.") if matched_doc else "Comprehensive technical evaluation."
-
-        return f"""### Executive Summary
-{summary_text} Modern production systems require multi-tiered validation, modular agentic orchestration, and rigorous automated evaluations.
-
-### Technical Analysis & Architecture
-1. **Core Mechanisms**:
-   - Retrieval-Augmented Generation decouples knowledge storage from model parameter weights, enabling real-time freshness and verifiable citations `[Source: {doc_id}]`.
-   - Dynamic Model Tiering routes routine queries to lightweight models while reserving complex reasoning for frontier models `[Source: doc-llm-gateway-03]`.
-2. **Evaluation & Safety**:
-   - Faithfulness and Context Precision metrics ensure answers remain grounded without hallucinating unverified claims `[Source: doc-rag-eval-01]`.
-   - Multi-layer guardrails prevent adversarial prompt injection and mask sensitive credentials prior to response delivery `[Source: doc-llm-guardrails-05]`.
-
-### Comparative Evaluation & Trade-offs
-- **Groundedness vs Latency**: Agentic RAG provides significantly higher factual precision and self-correction capability compared to naive single-shot retrieval, at the cost of incremental graph execution latency `[Source: doc-agentic-rag-02]`.
-- **Infrastructure Overhead**: Embedded vector databases like ChromaDB with HNSW indexing provide sub-10ms query execution with minimal operational complexity `[Source: doc-vector-search-04]`.
-
-### Key Conclusions & Best Practices
-1. Separate retrieval evaluation from generation metrics in continuous CI/CD pipelines.
-2. Implement strict runtime input, tool, and output guardrails.
-3. Utilize task-based routing in the LLM Gateway to optimize inference costs and throughput."""
+        evidence = re.findall(r"^\[Source: ([^\]]+)\] (.+)\n(.+)", prompt, re.MULTILINE)
+        evidence = list({cid: (cid, title, line) for cid, title, line in evidence}.values())
+        if not evidence:
+            return (
+                "### Executive Summary\n"
+                f"No verified evidence was found for \"{query}\". OpsMind is running in offline mode, "
+                "so no answer can be generated without retrieved sources."
+            )
+        findings = "\n".join(
+            f"- **{title.strip()}**: {first_line.strip()[:240]} [Source: {cid}]"
+            for cid, title, first_line in evidence
+        )
+        return (
+            "### Executive Summary\n"
+            f"Offline summary of the {len(evidence)} verified sources retrieved for \"{query}\".\n\n"
+            "### Key Findings\n"
+            f"{findings}\n\n"
+            "### Note\n"
+            "Generated by the offline deterministic engine; set USE_LIVE_LLM=true for full synthesis."
+        )
 
     @property
     def _llm_type(self) -> str:
@@ -168,73 +124,131 @@ class DeterministicReasoningLLM(BaseChatModel):
 
 
 class ResilientFallbackLLM(BaseChatModel):
-    """Wraps primary LLM with automatic graceful fallback to DeterministicReasoningLLM on network errors."""
+    """
+    Wraps the primary LLM. On failure it raises, unless ALLOW_OFFLINE_FALLBACK=true,
+    in which case it answers with the offline engine and logs a warning.
+    """
     primary_llm: Optional[BaseChatModel] = None
     fallback_llm: BaseChatModel
+    # Other models tried in order when the primary is rate-limited (e.g. its daily token quota is spent).
+    rate_limit_fallbacks: List[Any] = []
     task_type: str = "general"
     active_backend: str = "deterministic"
 
     def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, **kwargs) -> Any:
-        if self.primary_llm is not None:
+        if self.primary_llm is None:
+            return self.fallback_llm._generate(messages, stop=stop, **kwargs)
+        try:
+            return self.primary_llm._generate(messages, stop=stop, **kwargs)
+        except Exception as e:
+            if _is_rate_limit(e) and self.rate_limit_fallbacks:
+                return self._generate_with_fallback_models(messages, stop, e, **kwargs)
+            if not settings.ALLOW_OFFLINE_FALLBACK:
+                logfire.error(f"❌ {self.active_backend} LLM call failed for task '{self.task_type}': {e}")
+                raise
+            logfire.warning(f"⚠️ {self.active_backend} LLM call failed ({e}). ALLOW_OFFLINE_FALLBACK=true, using offline engine.")
+            return self.fallback_llm._generate(messages, stop=stop, **kwargs)
+
+    def _generate_with_fallback_models(self, messages, stop, first_error: Exception, **kwargs) -> Any:
+        last_error = first_error
+        for name, llm in self.rate_limit_fallbacks:
+            logfire.warning(f"⚠️ Rate limit on the primary model for '{self.task_type}'; retrying with {name}.")
             try:
-                res = self.primary_llm._generate(messages, stop=stop, **kwargs)
-                return res
+                result = llm._generate(messages, stop=stop, **kwargs)
             except Exception as e:
-                logfire.warning(f"⚠️ Primary LLM call failed ({e}). Switching to deterministic fallback.")
-        return self.fallback_llm._generate(messages, stop=stop, **kwargs)
+                if not _is_rate_limit(e):
+                    raise
+                last_error = e
+                continue
+            for generation in result.generations:
+                generation.message.response_metadata["fallback_model"] = name
+            return result
+        logfire.error(f"❌ All models are rate-limited for task '{self.task_type}': {last_error}")
+        raise last_error
 
     @property
     def _llm_type(self) -> str:
         return f"resilient-fallback({self.active_backend})"
 
 
+def _has_key(key: Optional[str]) -> bool:
+    return bool(key and key.strip() and not key.startswith("mock"))
+
+
+def _is_rate_limit(error: Exception) -> bool:
+    return getattr(error, "status_code", None) == 429 or type(error).__name__ == "RateLimitError"
+
+
 def get_llm_runtime_status() -> str:
     """Return name of active LLM backend."""
-    use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
-    if not use_live:
+    if not settings.USE_LIVE_LLM:
         return "deterministic"
-    if settings.PORTKEY_API_KEY and not settings.PORTKEY_API_KEY.startswith("mock"):
+    if _has_key(settings.PORTKEY_API_KEY):
         return "portkey"
-    if settings.GROQ_API_KEY and not settings.GROQ_API_KEY.startswith("mock"):
+    if _has_key(settings.GROQ_API_KEY):
         return "groq"
-    return "deterministic"
+    return "unconfigured"
+
+
+FAST_TASKS = ("planning", "classification", "critic", "routing", "verification")
+# Tasks with their own configurable model.
+TASK_MODELS = {"verification": settings.VERIFIER_MODEL}
+
+
+def _groq_chat(api_key: str, model: str, max_tokens: int, reasoning_effort: str) -> BaseChatModel:
+    from langchain_groq import ChatGroq
+    kwargs = {}
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+    return ChatGroq(
+        api_key=api_key,
+        model=model,
+        temperature=settings.LLM_TEMPERATURE,
+        timeout=settings.LLM_TIMEOUT_SECONDS,
+        max_retries=settings.LLM_MAX_RETRIES,
+        max_tokens=max_tokens,
+        **kwargs,
+    )
 
 
 def get_llm(task_type: str = "general") -> BaseChatModel:
     """
     Task-based LLM Router:
-    - "planning" / "classification" / "critic" -> Cheaper fast model (llama-3.1-8b-instant)
-    - "synthesis" / "report" -> Stronger model (llama-3.3-70b-versatile)
-    - Automatic fallback chain: Portkey Gateway -> Direct Groq -> Deterministic offline engine.
+    - "planning" / "classification" / "critic" -> Cheaper fast model (GROQ_FAST_MODEL)
+    - "synthesis" / "report" -> Stronger model (GROQ_MODEL)
+    - Backend order: Portkey Gateway -> Direct Groq. Offline engine when USE_LIVE_LLM=false
+      (or on failure only if ALLOW_OFFLINE_FALLBACK=true).
     """
-    model_name = "llama-3.1-8b-instant" if task_type in ("planning", "classification", "critic", "routing") else "llama-3.3-70b-versatile"
+    fast = task_type in FAST_TASKS
+    model_name = TASK_MODELS.get(task_type) or (settings.GROQ_FAST_MODEL if fast else settings.GROQ_MODEL)
+    max_tokens = settings.LLM_MAX_OUTPUT_TOKENS_FAST if fast else settings.LLM_MAX_OUTPUT_TOKENS_REPORT
     fallback_engine = DeterministicReasoningLLM(task_type=task_type)
     
-    use_live = os.getenv("USE_LIVE_LLM", "false").lower() == "true" or settings.USE_LIVE_LLM
-    if not use_live:
+    if not settings.USE_LIVE_LLM:
         return fallback_engine
 
     # 1. Try Portkey Gateway if key is present
-    if settings.PORTKEY_API_KEY and settings.PORTKEY_API_KEY.strip() and not settings.PORTKEY_API_KEY.startswith("mock"):
+    if _has_key(settings.PORTKEY_API_KEY):
         try:
             from langchain_openai import ChatOpenAI
             from portkey_ai import createHeaders, PORTKEY_GATEWAY_URL
             
-            slug = settings.GROQ_SLUG_2 if task_type in ("planning", "classification", "critic") else settings.GROQ_SLUG
+            slug = settings.GROQ_SLUG_2 if fast else settings.GROQ_SLUG
             
             llm = ChatOpenAI(
                 api_key=settings.PORTKEY_API_KEY,
                 base_url=PORTKEY_GATEWAY_URL,
                 model=f"@{slug}/{model_name}",
-                temperature=0.0,
-                timeout=10,
-                max_retries=1,
+                temperature=settings.LLM_TEMPERATURE,
+                timeout=settings.LLM_TIMEOUT_SECONDS,
+                max_retries=settings.LLM_MAX_RETRIES,
+                max_tokens=max_tokens,
                 default_headers=createHeaders(
                     api_key=settings.PORTKEY_API_KEY,
                     config=GATEWAY_CONFIG,
                     metadata={
                         "task_type": task_type,
-                        "environment": "production"
+                        "environment": settings.ENVIRONMENT
                     }
                 )
             )
@@ -244,25 +258,44 @@ def get_llm(task_type: str = "general") -> BaseChatModel:
             logfire.warning(f"⚠️ Portkey Gateway init note: {e}. Trying direct Groq client.")
 
     # 2. Try direct ChatGroq
-    if settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip() and not settings.GROQ_API_KEY.startswith("mock"):
+    if _has_key(settings.GROQ_API_KEY):
         try:
-            from langchain_groq import ChatGroq
-            llm = ChatGroq(
-                api_key=settings.GROQ_API_KEY,
-                model=model_name,
-                temperature=0.0,
-                timeout=10,
-                max_retries=1
-            )
+            llm = _groq_chat(settings.GROQ_API_KEY, model_name, max_tokens, settings.LLM_REASONING_EFFORT)
+            # Fallback models get no reasoning_effort: valid values differ between model families.
+            fallbacks = [(m, _groq_chat(settings.GROQ_API_KEY, m, max_tokens, ""))
+                         for m in settings.LLM_FALLBACK_MODELS if m != model_name]
             logfire.info(f"⚡ LLM Gateway: Direct Groq client for '{task_type}' ({model_name})")
-            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, task_type=task_type, active_backend="groq")
+            return ResilientFallbackLLM(primary_llm=llm, fallback_llm=fallback_engine, rate_limit_fallbacks=fallbacks,
+                                        task_type=task_type, active_backend="groq")
         except Exception as e:
             logfire.warning(f"⚠️ Groq direct client note: {e}. Trying fallback.")
 
-    # 3. Fallback to high-fidelity deterministic reasoning model
-    logfire.info(f"🛡️ LLM Gateway: Using deterministic offline reasoning engine for '{task_type}'")
+    # 3. Live mode without a usable backend
+    if not settings.ALLOW_OFFLINE_FALLBACK:
+        raise RuntimeError("USE_LIVE_LLM=true but no usable GROQ_API_KEY or PORTKEY_API_KEY is configured.")
+    logfire.warning(f"⚠️ LLM Gateway: no live backend available, using offline engine for '{task_type}'")
     return fallback_engine
 
 
-def get_langchain_llm(feature: str = "rag") -> BaseChatModel:
-    return get_llm(task_type="synthesis" if feature == "rag" else "planning")
+def get_judge_llm() -> BaseChatModel:
+    """
+    Independent evaluation judge: JUDGE_MODEL with JUDGE_API_KEY (defaults to GROQ_API_KEY).
+    JUDGE_BASE_URL points it at any OpenAI-compatible provider instead of Groq.
+    """
+    if not settings.USE_LIVE_LLM:
+        raise RuntimeError("The evaluation judge needs USE_LIVE_LLM=true.")
+    if not _has_key(settings.JUDGE_API_KEY):
+        raise RuntimeError("No JUDGE_API_KEY or GROQ_API_KEY configured for the evaluation judge.")
+    if settings.JUDGE_BASE_URL:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            api_key=settings.JUDGE_API_KEY,
+            base_url=settings.JUDGE_BASE_URL,
+            model=settings.JUDGE_MODEL,
+            temperature=0.0,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=settings.LLM_MAX_RETRIES,
+            max_tokens=settings.JUDGE_MAX_OUTPUT_TOKENS,
+        )
+    return _groq_chat(settings.JUDGE_API_KEY, settings.JUDGE_MODEL, settings.JUDGE_MAX_OUTPUT_TOKENS,
+                      settings.JUDGE_REASONING_EFFORT)

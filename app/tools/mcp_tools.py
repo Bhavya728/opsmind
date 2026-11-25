@@ -15,35 +15,36 @@ from app.tools.schemas import (
     DocumentLookupInput,
     MCP_TOOL_DEFINITIONS,
 )
-from app.tools.mcp_server import raw_web_search, raw_knowledge_search, raw_document_lookup, list_registered_mcp_tools
+from app.tools.mcp_server import raw_web_search, raw_knowledge_search, raw_document_lookup
 from app.tools.mcp_client import mcp_client
 from app.utils.logger import logfire
 
 
 @tool(args_schema=WebSearchInput)
-def web_search(query: str, num_results: Optional[int] = 3) -> Dict[str, Any]:
+def web_search(query: str, num_results: Optional[int] = None, recent: Optional[bool] = False) -> Dict[str, Any]:
     """
     Search the web for recent external technical articles, benchmarks, framework docs, and updates.
     Routes through MCP Client / Server when MCP mode is enabled.
     """
+    args = {"query": query, "num_results": num_results, "recent": bool(recent)}
     if settings.USE_MCP_SERVER:
-        return mcp_client.call_tool("web_search", {"query": query, "num_results": num_results or 3})
-    return raw_web_search(query=query, num_results=num_results or 3)
+        return mcp_client.call_tool("web_search", args)
+    return raw_web_search(**args)
 
 
 @tool(args_schema=KnowledgeSearchInput)
-def knowledge_search(query: str, category: Optional[str] = None, limit: Optional[int] = 3) -> Dict[str, Any]:
+def knowledge_search(query: str, category: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """
     Search the internal technical knowledge base using ChromaDB vector similarity.
     Retrieves dense semantic chunks with metadata and source citations.
     Routes through MCP Client / Server when MCP mode is enabled.
     """
-    args = {"query": query, "limit": limit or 3}
+    args = {"query": query, "limit": limit}
     if category:
         args["category"] = category
     if settings.USE_MCP_SERVER:
         return mcp_client.call_tool("knowledge_search", args)
-    return raw_knowledge_search(query=query, category=category, limit=limit or 3)
+    return raw_knowledge_search(query=query, category=category, limit=limit)
 
 
 @tool(args_schema=DocumentLookupInput)
